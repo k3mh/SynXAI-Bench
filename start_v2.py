@@ -26,6 +26,8 @@ import lime.lime_tabular
 from anchor import anchor_tabular
 from datetime import datetime
 from pathlib import Path
+import warnings
+warnings.filterwarnings("ignore")
 
 import logging
 logging.basicConfig(format='%(asctime)s: %(module)s: %(message)s')
@@ -59,11 +61,12 @@ def dataset_signals(count, dsts_lst, dsts_prop):
 
     for iter_, dataset_index in enumerate(dsts_lst):
 
+
         func_= funs[dataset_index]
         prop_size = int(dsts_prop[iter_] * count)
 
-        generated_ds = generated_ds.append(func_(prop_size).get_data())
-        metadata_df  = metadata_df.append(ds.meta_data)
+        generated_ds = pd.concat([generated_ds, func_(prop_size).get_data()])
+        metadata_df  = pd.concat([ metadata_df, ds.meta_data])
 
 
         #print(generated_ds.head())
@@ -72,7 +75,7 @@ def dataset_signals(count, dsts_lst, dsts_prop):
 
     return  generated_ds, metadata_df
 
-dataset_size= 10000
+dataset_size= 300
 Dataframe_list = []
 accuracy_lst = []
 auc_list = []
@@ -95,9 +98,9 @@ save_iter_evaluation = True
 load_final_result = False
 save_final_result = True
 
-get_score = False
+get_score = True
 
-generate_plots = False
+generate_plots = True
 
 
 
