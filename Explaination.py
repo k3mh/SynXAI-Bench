@@ -108,7 +108,7 @@ def get_exp_anchor_parallel(data, explainer, precision=.95, model=None):
     explaination_df = pd.DataFrame(columns=["explainer_lib", "instance", "features", "importance"])
     explainer_lib = "anchor"
 
-    def inner_exp(data_, model_,  i_):
+    def inner_expinner_exp(data_, model_,  i_):
         e_ = explainer.explain_instance(data_.values, model_.predict, threshold=precision)
 
         # print("i", i_)
