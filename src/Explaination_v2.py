@@ -22,7 +22,7 @@ from anchor import anchor_tabular  # Assuming you have the 'anchor-exp' package
 # For parallel processing
 from joblib import Parallel, delayed
 import multiprocessing
-
+import gc
 
 
 
@@ -304,11 +304,7 @@ class AnchorTabularExplainerWrapper(BaseExplainer):
         feature_names = self.feature_names
         train_data = training_data_np  # Anchor can infer types or use categorical_names
         categorical_names = categorical_names if categorical_names else {}
-        print("========== debug 0=======")
-        print(class_names)
-        print(feature_names)
-        print(train_data)
-        print(categorical_names)
+
 
     def explain_instance(self,
                          data_instance: pd.Series,
@@ -318,21 +314,17 @@ class AnchorTabularExplainerWrapper(BaseExplainer):
 
         instance_np = data_instance[self.feature_names].values if isinstance(data_instance, pd.Series) else data_instance# Anchor handles dtypes
         # instance_np = instance_np.reshape(1, -1)
-        print("========== debug 1=======")
-        print(instance_np)
-        print(instance_np.ndim )
-        print(dict(**kwargs))
+
 
         anchor_exp = self.explainer_object.explain_instance(
             data_row=instance_np,
             # classifier_fn=self.predict_fn,  # This function should return labels
             threshold=threshold,
-            batch_size= 1,
-            verbose= True,
+            batch_size= 50,
+            verbose= False,
             **kwargs
         )
-        print("========== debug 2=======")
-        print(anchor_exp)
+        gc.collect()
         # Extract feature names involved in the rule conditions
         # anchor_exp.names() returns list of strings like "feature_name <= value"
         # anchor_exp.features() returns list of feature indices involved in the rule

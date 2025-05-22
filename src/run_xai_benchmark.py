@@ -296,7 +296,7 @@ def main(args):
                         )
                         explanations_df = explainer_wrapper.explain_dataset(
                             X_test_df, parallel=args.parallel_explain, n_jobs=args.n_jobs,
-                            threshold=args.anchor_threshold, classifier_fn=ml_model.predict_proba
+                            threshold=args.anchor_threshold, classifier_fn=ml_model.predict
                         )
                     else:
                         logger.warning(f"Explainer {lib_name} not implemented in this script's main loop.")
@@ -488,7 +488,7 @@ sys.argv = [
         '--calculate_final_scores',  # sys.argv[24] (boolean flag)
         '--parallel_explain',  # sys.argv[25] (boolean flag)
         '--n_jobs',  # sys.argv[26]
-        '1'  # sys.argv[27] (string)
+        '8'  # sys.argv[27] (string)
     ]
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run XAI Benchmark Pipeline.")
