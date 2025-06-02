@@ -280,7 +280,7 @@ def calculate_overall_score(
 
     Args:
         evaluation_results_df (pd.DataFrame): DataFrame with columns like 'dataset_id',
-                                             'explainer_lib', 'metric_name', 'average_score'.
+                                             'lib', 'metric_name', 'average_score'.
         dataset_complexity_map (Dict[str, float]): Mapping from dataset_id to its complexity.
         model_accuracy_map (Dict[str, float]): Mapping from dataset_id to model accuracy on it.
 
@@ -370,8 +370,9 @@ def calculate_xfa_score(
         float: The total XFA score for the explainer.
     """
     logger.info(f"Calculating XFA Score for explainer '{explainer_lib_id}'...")
+    logger.info(evaluation_results_df.columns)
 
-    explainer_results = evaluation_results_df[evaluation_results_df['explainer_lib'] == explainer_lib_id]
+    explainer_results = evaluation_results_df[evaluation_results_df['lib'] == explainer_lib_id]
     if explainer_results.empty:
         logger.warning(f"No results found for explainer '{explainer_lib_id}'. XFA score will be 0.")
         return 0.0
@@ -454,7 +455,7 @@ if __name__ == '__main__':
     # Ensure 'features' and 'importance' are lists of the same length for each row
     exp_data = pd.DataFrame({
         'instance_idx': [1, 2, 3, 4, 5],  # Instance 5 won't be matched
-        'explainer_lib': ['lime'] * 5,
+        'lib': ['lime'] * 5,
         'dataset_id': ['ds1'] * 5,
         'features': [['f1', 'f3', 'f5'], ['f3', 'f4'], ['f1', 'f2'], ['f6'], ['f7']],
         'importance': [[0.5, 0.3, 0.1], [0.8, 0.1], [0.9, -0.2], [0.5], [0.6]]
@@ -484,14 +485,14 @@ if __name__ == '__main__':
     # Create a mock evaluation_results_df
     # This df would typically be built by running all metric calculators over all datasets/explainers
     results_list_for_composite = [
-        {'dataset_id': 'ds1', 'explainer_lib': 'lime', 'metric_name': 'recall',
+        {'dataset_id': 'ds1', 'lib': 'lime', 'metric_name': 'recall',
          'average_score': recall_res_full['average_score']},
-        {'dataset_id': 'ds1', 'explainer_lib': 'lime', 'metric_name': 'fpr', 'average_score': fpr_res['average_score']},
-        {'dataset_id': 'ds1', 'explainer_lib': 'lime', 'metric_name': 'sensitivity',
+        {'dataset_id': 'ds1', 'lib': 'lime', 'metric_name': 'fpr', 'average_score': fpr_res['average_score']},
+        {'dataset_id': 'ds1', 'lib': 'lime', 'metric_name': 'sensitivity',
          'average_score': sensitivity_res['average_score']},
-        {'dataset_id': 'ds2', 'explainer_lib': 'lime', 'metric_name': 'recall', 'average_score': 0.7},
-        {'dataset_id': 'ds2', 'explainer_lib': 'lime', 'metric_name': 'fpr', 'average_score': 0.15},
-        {'dataset_id': 'ds2', 'explainer_lib': 'lime', 'metric_name': 'sensitivity', 'average_score': 0.6},
+        {'dataset_id': 'ds2', 'lib': 'lime', 'metric_name': 'recall', 'average_score': 0.7},
+        {'dataset_id': 'ds2', 'lib': 'lime', 'metric_name': 'fpr', 'average_score': 0.15},
+        {'dataset_id': 'ds2', 'lib': 'lime', 'metric_name': 'sensitivity', 'average_score': 0.6},
     ]
     mock_eval_results_df = pd.DataFrame(results_list_for_composite)
 

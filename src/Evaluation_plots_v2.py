@@ -24,7 +24,7 @@ def plot_metric_distributions(
 
     Args:
         results_df (pd.DataFrame): DataFrame containing evaluation results.
-            Expected columns: 'metric', 'dataset', 'score_list' (list of scores), 'lib' (explainer library).
+            Expected columns: 'metric_name', 'dataset', 'score_list' (list of scores), 'lib' (explainer library).
         metrics_to_plot (List[str]): A list of metric names to plot (e.g., ['recall', 'fpr']).
         output_dir (Path): The directory where plots will be saved.
         plot_type (str): Type of plot to generate, 'violin' or 'box'.
@@ -37,7 +37,7 @@ def plot_metric_distributions(
 
         # Filter for the current metric and explode the list of scores
         metric_df = results_df[
-            results_df["metric"] == metric_name].copy()  # Use .copy() to avoid SettingWithCopyWarning
+            results_df["metric_name"] == metric_name].copy()  # Use .copy() to avoid SettingWithCopyWarning
         if metric_df.empty:
             logger.warning(f"No data found for metric '{metric_name}'. Skipping plot.")
             continue
@@ -71,10 +71,10 @@ def plot_metric_distributions(
         plt.figure(figsize=(14, 8))  # Create a new figure for each plot
 
         if plot_type == "violin":
-            sns.violinplot(data=exploded_df, x='dataset', y='score_value', hue='lib',
+            sns.violinplot(data=exploded_df, x='dataset_id', y='score_value', hue='lib',
                            split=True, scale_hue=True, cut=0, inner="quartile")
         elif plot_type == "box":
-            sns.boxplot(data=exploded_df, x='dataset', y='score_value', hue='lib')
+            sns.boxplot(data=exploded_df, x='dataset_id', y='score_value', hue='lib')
         else:
             logger.error(f"Unsupported plot_type: '{plot_type}'. Choose 'violin' or 'box'.")
             plt.close()  # Close the figure if plot type is invalid
@@ -234,7 +234,7 @@ def run_all_plots(
         evaluation_filename (str): Name of the pickled DataFrame with evaluation results.
         metrics_to_plot (Optional[List[str]]): Specific metrics to plot distributions for.
             If None, defaults to ['recall', 'recall_partial_true', 'recall_partial_false', 'fpr', 'sensitivity'].
-            Ensure these names match the 'metric' column in your evaluation_filename.
+            Ensure these names match the 'metric_name' column in your evaluation_filename.
         plot_signal_csv_pattern (str): Pattern for signal CSV files.
     """
     logger = logging.getLogger(__name__)
@@ -251,16 +251,16 @@ def run_all_plots(
 
             if metrics_to_plot is None:
                 # Default metrics, assuming how 'recall_partial' might be stored.
-                # Adjust these names to exactly match your 'metric' column in the pickle file.
+                # Adjust these names to exactly match your 'metric_name' column in the pickle file.
                 # For example, if your RecallMetric config is stored, you might filter on metric=='recall' & config.partial==True
                 metrics_to_plot = ['recall', 'fpr', 'sensitivity']  # Base metrics
                 # Add logic here if 'recall_partial' is a distinct metric name or derived from config
                 if 'metric_config' in results_df.columns:  # Hypothetical column
-                    if results_df[(results_df['metric'] == 'recall') & (
+                    if results_df[(results_df['metric_name'] == 'recall') & (
                     results_df['metric_config'].apply(lambda x: x.get('partial', False) == True))].shape[0] > 0:
                         metrics_to_plot.append(
                             'recall_partial_true_placeholder')  # Placeholder: you'd filter and rename or plot based on config
-                elif 'recall_partial' in results_df['metric'].unique():  # If it's a distinct name
+                elif 'recall_partial' in results_df['metric_name'].unique():  # If it's a distinct name
                     metrics_to_plot.append('recall_partial')
 
             logger.info(f"Plotting metric distributions for: {metrics_to_plot}")

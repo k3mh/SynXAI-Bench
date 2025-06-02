@@ -320,7 +320,7 @@ class AnchorTabularExplainerWrapper(BaseExplainer):
             data_row=instance_np,
             # classifier_fn=self.predict_fn,  # This function should return labels
             threshold=threshold,
-            batch_size= 50,
+            batch_size= 100,
             verbose= False,
             **kwargs
         )
@@ -330,33 +330,46 @@ class AnchorTabularExplainerWrapper(BaseExplainer):
         # anchor_exp.features() returns list of feature indices involved in the rule
         rule_conditions = anchor_exp.names()  # These are the "features" of the rule
 
-        # Attempt to parse feature names from rule conditions for a more direct feature list
-        # This is heuristic and might need refinement based on how Anchor formats rule conditions.
-        parsed_features_from_rule = []
-        if self.feature_names:
-            for condition_str in rule_conditions:
-                for fn in self.feature_names:
-                    if fn in condition_str:  # Simple check; more robust parsing might be needed
-                        if fn not in parsed_features_from_rule:
-                            parsed_features_from_rule.append(fn)
+        # Extract feature names from the Anchor explanation features (ids)
+        exp_feature = []
+        for fn in anchor_exp.exp_map["feature"]:
+            exp_feature.append(self.feature_names[fn])
 
-        if not parsed_features_from_rule and rule_conditions:  # Fallback if parsing fails but rules exist
-            parsed_features_from_rule = ["rule_condition_" + str(i + 1) for i in range(len(rule_conditions))]
+        # Extract the feature importance based on the rule coverage coefficient.
+        # Assuming the higher coverage indicates higher and confident contribution
+        exp_importance = []
+        for imp in anchor_exp.exp_map["coverage"]:
+            exp_importance.append(imp)
 
-        # For 'importance', we can use rule precision or just assign a dummy value.
-        # Original code used: list(range(1, len(vars) + 1)).
-        # Let's use precision if available, or 1s for each condition.
-        importances = [anchor_exp.precision()] * len(parsed_features_from_rule) if parsed_features_from_rule else []
-        if not importances and parsed_features_from_rule:
-            importances = [1.0] * len(parsed_features_from_rule)
+
+        # # Attempt to parse feature names from rule conditions for a more direct feature list
+        # # This is heuristic and might need refinement based on how Anchor formats rule conditions.
+        # parsed_features_from_rule = []
+        # if self.feature_names:
+        #     for condition_str in rule_conditions:
+        #         for fn in self.feature_names:
+        #             if fn in condition_str:  # Simple check; more robust parsing might be needed
+        #                 if fn not in parsed_features_from_rule:
+        #                     parsed_features_from_rule.append(fn)
+        #
+        # if not parsed_features_from_rule and rule_conditions:  # Fallback if parsing fails but rules exist
+        #     parsed_features_from_rule = ["rule_condition_" + str(i + 1) for i in range(len(rule_conditions))]
+        #
+        # # For 'importance', we can use rule precision or just assign a dummy value.
+        # # Original code used: list(range(1, len(vars) + 1)).
+        # # Let's use precision if available, or 1s for each condition.
+        # importances = [anchor_exp.precision()] * len(parsed_features_from_rule) if parsed_features_from_rule else []
+        # if not importances and parsed_features_from_rule:
+        #     importances = [1.0] * len(parsed_features_from_rule)
+
 
         return {
-            "features": parsed_features_from_rule,
-            "importance": importances,
-            "rule_conditions_text": rule_conditions,  # Store the actual rule
-            "precision": anchor_exp.precision(),
-            "coverage": anchor_exp.coverage(),
-            "raw_explanation": anchor_exp
+            "features": exp_feature,
+            "importance": exp_importance,
+            # "rule_conditions_text": rule_conditions,  # Store the actual rule
+            "precision": anchor_exp.exp_map["precision"],
+            "coverage": anchor_exp.exp_map["coverage"],
+            "raw_explanation": rule_conditions
         }
 
 

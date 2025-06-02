@@ -160,102 +160,117 @@ def main(args):
     # sdg.generate_dataset_by_name uses "RRs0", "RRs1", etc. So we adjust.
     # dataset_configs_to_run = DEFAULT_DATASETS_SEQUENCES
 
-    dataset_configs_to_run = DEFAULT_DATASETS_SEQUENCES
+    if args.generate_dataset:
+        if args.load_explanation:
+            logger.warning(
+                "`--generate-dataset` is specified; therefore, `--load-explanation` will be ignored and treated as False."
+            )
+            args.load_explanation = False
+
+        if args.load_evaluation:
+            logger.warning(
+                "`--generate-dataset` is specified; therefore, `--load-evaluation` will be ignored and treated as False."
+            )
+            args.load_evaluation = False
 
 
-    dataset_proportions_list = []
-    for seq in dataset_configs_to_run:
 
-        if not seq: continue
-        # Original code: np.floor((1/len(i)) * 1000) / 1000 - this ensures sum of proportions is slightly less than 1
-        # if len(i) makes 1/len(i) have many decimal places.
-        # A simpler way for equal proportions that sum to 1:
-        prop_val = 1.0 / len(seq)
-        props = [prop_val] * len(seq)
-        # Adjust last proportion to ensure sum is exactly 1.0 if needed due to float precision
-        current_sum = sum(props[:-1])
-        if len(props) > 0:
-            props[-1] = 1.0 - current_sum
+        dataset_configs_to_run = DEFAULT_DATASETS_SEQUENCES
 
-        dataset_proportions_list.append(props)
 
-    # Save the dataset sequences being used for this run
-    print("=================================")
-    print(dataset_configs_to_run)
-    pd.DataFrame(dataset_configs_to_run).to_csv(run_output_dir / f"run_dataset_sequences_size_{args.dataset_size}.csv",
-                                                index=False,header=False)
+        dataset_proportions_list = []
+        for seq in dataset_configs_to_run:
 
-    all_run_results_df = pd.DataFrame()
-    model_performance_records = []
+            if not seq: continue
+            # Original code: np.floor((1/len(i)) * 1000) / 1000 - this ensures sum of proportions is slightly less than 1
+            # if len(i) makes 1/len(i) have many decimal places.
+            # A simpler way for equal proportions that sum to 1:
+            prop_val = 1.0 / len(seq)
+            props = [prop_val] * len(seq)
+            # Adjust last proportion to ensure sum is exactly 1.0 if needed due to float precision
+            current_sum = sum(props[:-1])
+            if len(props) > 0:
+                props[-1] = 1.0 - current_sum
 
-    # Consistent feature names from the synthetic generator config
-    # Assumes sdg.BACKGROUND_FEATURE_NAMES are the features *before* target 'y' is added
-    # And that all generated datasets will use these plus 'y'
-    current_feature_names = sdg.BACKGROUND_FEATURE_NAMES
+            dataset_proportions_list.append(props)
 
-    for i, ds_indices_config in enumerate(dataset_configs_to_run):
-        dataset_id = f"config_{i + 1}"  # Using a more descriptive ID
-        logger.info(f"===== Processing Dataset Configuration: {dataset_id} (Indices: {ds_indices_config}) =====")
-        gc.collect()
+        # Save the dataset sequences being used for this run
+        print("=================================")
+        print(dataset_configs_to_run)
+        pd.DataFrame(dataset_configs_to_run).to_csv(run_output_dir / f"run_dataset_sequences_size_{args.dataset_size}.csv",
+                                                    index=False,header=False)
 
-        proportions_config = dataset_proportions_list[i]
+        all_run_results_df = pd.DataFrame()
+        model_performance_records = []
 
-        # --- Dataset Generation ---
-        dataset_pkl_path = run_output_dir / f"dataset_{dataset_id}.pkl"
-        metadata_pkl_path = run_output_dir / f"metadata_{dataset_id}.pkl"
+        # Consistent feature names from the synthetic generator config
+        # Assumes sdg.BACKGROUND_FEATURE_NAMES are the features *before* target 'y' is added
+        # And that all generated datasets will use these plus 'y'
+        current_feature_names = sdg.BACKGROUND_FEATURE_NAMES
 
-        if args.load_datasets and dataset_pkl_path.exists() and metadata_pkl_path.exists():
-            logger.info(f"Loading dataset and metadata for {dataset_id} from files.")
-            dataset_df = pd.read_pickle(dataset_pkl_path)
-            metadata_df = pd.read_pickle(metadata_pkl_path)
-            # features_names should be loaded or be consistent
-        else:
-            logger.info(f"Generating dataset and metadata for {dataset_id}...")
-            # Adjust 1-based indices from config to 0-based for ds_name
-            zero_based_ds_indices = [idx - 1 for idx in ds_indices_config if idx > 0]  # ds0 is index 0 # not needed as ds0 is not used
-            zero_based_ds_indices = ds_indices_config # to disable the index 0
-            if any(idx < 0 for idx in zero_based_ds_indices):
-                logger.error(f"Invalid dataset index in {ds_indices_config}. Must be > 0. Skipping.")
+        for i, ds_indices_config in enumerate(dataset_configs_to_run):
+            dataset_id = f"config_{i + 1}"  # Using a more descriptive ID
+            logger.info(f"===== Processing Dataset Configuration: {dataset_id} (Indices: {ds_indices_config}) =====")
+            gc.collect()
+
+            proportions_config = dataset_proportions_list[i]
+
+            # --- Dataset Generation ---
+            dataset_pkl_path = run_output_dir / f"dataset_{dataset_id}.pkl"
+            metadata_pkl_path = run_output_dir / f"metadata_{dataset_id}.pkl"
+
+            if args.load_datasets and dataset_pkl_path.exists() and metadata_pkl_path.exists():
+                logger.info(f"Loading dataset and metadata for {dataset_id} from files.")
+                dataset_df = pd.read_pickle(dataset_pkl_path)
+                metadata_df = pd.read_pickle(metadata_pkl_path)
+                # features_names should be loaded or be consistent
+            else:
+                logger.info(f"Generating dataset and metadata for {dataset_id}...")
+                # Adjust 1-based indices from config to 0-based for ds_name
+                zero_based_ds_indices = [idx - 1 for idx in ds_indices_config if idx > 0]  # ds0 is index 0 # not needed as ds0 is not used
+                zero_based_ds_indices = ds_indices_config # to disable the index 0
+                if any(idx < 0 for idx in zero_based_ds_indices):
+                    logger.error(f"Invalid dataset index in {ds_indices_config}. Must be > 0. Skipping.")
+                    continue
+
+                dataset_df, metadata_df, _ = generate_composite_dataset(
+                    zero_based_ds_indices, proportions_config, int(args.dataset_size), current_feature_names
+                )
+                if args.save_datasets and not dataset_df.empty:
+                    logger.info(f"Saving dataset and metadata for {dataset_id}.")
+                    dataset_df.to_pickle(dataset_pkl_path)
+                    metadata_df.to_pickle(metadata_pkl_path)
+
+            if dataset_df.empty:
+                logger.warning(f"Dataset for {dataset_id} is empty. Skipping further processing for this config.")
                 continue
 
-            dataset_df, metadata_df, _ = generate_composite_dataset(
-                zero_based_ds_indices, proportions_config, int(args.dataset_size), current_feature_names
+            # --- Data Splitting & Model Training ---
+            X_train_df, X_test_df, y_train, y_test = train_test_split(
+                dataset_df[current_feature_names], dataset_df[TARGET_NAME],
+                train_size=0.80, random_state=args.random_state, stratify=dataset_df[TARGET_NAME]
             )
-            if args.save_datasets and not dataset_df.empty:
-                logger.info(f"Saving dataset and metadata for {dataset_id}.")
-                dataset_df.to_pickle(dataset_pkl_path)
-                metadata_df.to_pickle(metadata_pkl_path)
+            # Align metadata with the test set using instance_idx if available, or index
+            # The metadata_df from generate_composite_dataset should align with dataset_df by index
+            meta_test_df = metadata_df.loc[X_test_df.index].reset_index().rename(columns={'index': 'original_dataset_idx'})
+            # Add 'instance_idx' for metric calculation alignment
+            meta_test_df['instance_idx'] = X_test_df.index
+            X_test_df = X_test_df.reset_index(drop=True)  # Ensure X_test_df has simple 0-based index
+            y_test = y_test.reset_index(drop=True)
+            meta_test_df = meta_test_df.reset_index(drop=True)
 
-        if dataset_df.empty:
-            logger.warning(f"Dataset for {dataset_id} is empty. Skipping further processing for this config.")
-            continue
+            ml_model = train_model(args.model_type, X_train_df, y_train, args.random_state)
 
-        # --- Data Splitting & Model Training ---
-        X_train_df, X_test_df, y_train, y_test = train_test_split(
-            dataset_df[current_feature_names], dataset_df[TARGET_NAME],
-            train_size=0.80, random_state=args.random_state, stratify=dataset_df[TARGET_NAME]
-        )
-        # Align metadata with the test set using instance_idx if available, or index
-        # The metadata_df from generate_composite_dataset should align with dataset_df by index
-        meta_test_df = metadata_df.loc[X_test_df.index].reset_index().rename(columns={'index': 'original_dataset_idx'})
-        # Add 'instance_idx' for metric calculation alignment
-        meta_test_df['instance_idx'] = X_test_df.index
-        X_test_df = X_test_df.reset_index(drop=True)  # Ensure X_test_df has simple 0-based index
-        y_test = y_test.reset_index(drop=True)
-        meta_test_df = meta_test_df.reset_index(drop=True)
+            y_pred_test = ml_model.predict(X_test_df.values)
+            y_proba_test = ml_model.predict_proba(X_test_df.values)[:, 1]
 
-        ml_model = train_model(args.model_type, X_train_df, y_train, args.random_state)
-
-        y_pred_test = ml_model.predict(X_test_df.values)
-        y_proba_test = ml_model.predict_proba(X_test_df.values)[:, 1]
-
-        accuracy = accuracy_score(y_test, y_pred_test)
-        auc = roc_auc_score(y_test, y_proba_test)
-        model_performance_records.append({
-            'dataset_id': dataset_id, 'config_indices': ds_indices_config,
-            'accuracy': accuracy, 'auc': auc
-        })
-        logger.info(f"Model Performance for {dataset_id}: Accuracy={accuracy:.4f}, AUC={auc:.4f}")
+            accuracy = accuracy_score(y_test, y_pred_test)
+            auc = roc_auc_score(y_test, y_proba_test)
+            model_performance_records.append({
+                'dataset_id': dataset_id, 'config_indices': ds_indices_config,
+                'accuracy': accuracy, 'auc': auc
+            })
+            logger.info(f"Model Performance for {dataset_id}: Accuracy={accuracy:.4f}, AUC={auc:.4f}")
 
         # --- Explanation Generation ---
         current_config_explanations = {}  # Store explanations {'lime': df, 'anchor': df}
@@ -304,6 +319,10 @@ def main(args):
                     current_config_explanations[lib_name] = explanations_df
                     if args.save_explanations and not explanations_df.empty:
                         logger.info(f"Saving {lib_name} explanations for {dataset_id}.")
+                        # logger.info("========= debug ================")
+                        # logger.info(explanations_df.shape)
+                        # logger.info(explanations_df.columns)
+                        # logger.info(explanations_df.head(5).values)
                         explanations_df.to_pickle(exp_pkl_path)
 
         # --- Evaluation ---
@@ -391,6 +410,10 @@ def main(args):
                 # if args.save_evaluation:
                 #    current_config_results_df.to_pickle(Iter_evaluation_pkl_path)
 
+
+
+
+
     # --- Save Final Aggregated Results ---
     if args.save_evaluation and not all_run_results_df.empty:
         final_results_pkl_path = run_output_dir / "evaluation_all_metrics.pkl"
@@ -465,13 +488,13 @@ def main(args):
 sys.argv = [
         'run_xai_benchmark.py',  # sys.argv[0]
         '--run_id',  # sys.argv[1]
-        'comprehensive_run_001',  # sys.argv[2]
+        'comprehensive_run_002',  # sys.argv[2]
         '--output_dir',  # sys.argv[3]
         'my_benchmark_results',  # sys.argv[4]
         '--random_state',  # sys.argv[5]
         '123',  # sys.argv[6] (note: numbers are passed as strings)
         '--dataset_size',  # sys.argv[7]
-        '1000',  # sys.argv[8] (string)
+        '500',  # sys.argv[8] (string)
         '--model_type',  # sys.argv[11]
         'xgboost',  # sys.argv[12]
         '--lime_num_features',  # sys.argv[13]
@@ -487,7 +510,7 @@ sys.argv = [
         '--calculate_final_scores',  # sys.argv[24] (boolean flag)
         '--parallel_explain',  # sys.argv[25] (boolean flag)
         '--n_jobs',  # sys.argv[26]
-        '8'  # sys.argv[27] (string)
+        '3'  # sys.argv[27] (string)
     ]
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run XAI Benchmark Pipeline.")
@@ -517,13 +540,14 @@ if __name__ == '__main__':
     parser.add_argument("--sensitivity_top_k", type=int, default=3, help="Top K features for sensitivity metric.")
 
     # Execution flow control flags
+    parser.add_argument("--generate_dataset", action="store_true", help="generate datasets.")
     parser.add_argument("--load_datasets", action="store_true", help="Load datasets from disk if available.")
     parser.add_argument("--save_datasets", action="store_true", help="Save generated datasets to disk.")
     parser.add_argument("--skip_explanations", action="store_true", help="Skip explanation generation.")
     parser.add_argument("--load_explanations", action="store_true", help="Load explanations from disk if available.")
     parser.add_argument("--save_explanations", action="store_true", help="Save generated explanations to disk.")
     parser.add_argument("--skip_evaluation", action="store_true", help="Skip evaluation metric calculation.")
-    # parser.add_argument("--load_evaluation", action="store_true", help="Load intermediate evaluation results from disk.") # More complex to manage per-config
+    parser.add_argument("--load_evaluation", action="store_true", help="Load intermediate evaluation results from disk.") # More complex to manage per-config
     parser.add_argument("--save_evaluation", action="store_true", help="Save final aggregated evaluation results.")
     parser.add_argument("--generate_plots", action="store_true", help="Generate plots after evaluation.")
     parser.add_argument("--calculate_final_scores", action="store_true", help="Calculate overall and XFA scores.")
@@ -533,32 +557,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # Set default save/load behavior if not specified (e.g., save if not loading)
-    if not args.load_datasets: args.save_datasets = True  # Default to saving if not loading
-    if not args.load_explanations and not args.skip_explanations: args.save_explanations = True
-    if not args.skip_evaluation: args.save_evaluation = True  # Save the final aggregated results by default
-
-
-
-    main(args)
-
-    #   python run_xai_benchmark.py \
-    #   --run_id "comprehensive_run_001" \
-    #   --output_dir "my_benchmark_results" \
-    #   --random_state 123 \
-    #   --dataset_size 250 \
-    #   --model_type "ExtraTrees" \
-    #   --lime_num_features 7 \
-    #   --anchor_threshold 0.85 \
-    #   --sensitivity_top_k 4 \
-    #   --load_datasets \
-    #   --save_datasets \
-    #   --skip_explanations \
-    #   --load_explanations \
-    #   --save_explanations \
-    #   --skip_evaluation \
-    #   --save_evaluation \
-    #   --generate_plots \
-    #   --calculate_final_scores \
-    #   --parallel_explain \
-    #   --n_jobs 4
+    # Inside your main function, after parsing arguments, e.g
