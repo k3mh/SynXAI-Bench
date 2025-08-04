@@ -401,6 +401,7 @@ def main(args: argparse.Namespace):
             metadata_df: Optional[pd.DataFrame] = None
             dataset_pkl_path = run_output_dir / f"dataset_{dataset_id_str}.pkl"
             metadata_pkl_path = run_output_dir / f"metadata_{dataset_id_str}.pkl"
+            trained_model_path = run_output_dir / f"model_{dataset_id_str}.json"
 
             if args.load_datasets and dataset_pkl_path.exists() and metadata_pkl_path.exists():
                 logger.info(f"Attempting to load dataset and metadata for {dataset_id_str} from files.")
@@ -448,6 +449,12 @@ def main(args: argparse.Namespace):
 
             ml_model = train_model(args.model_type, X_train_df, y_train, args.random_state)
 
+            # Save the trained model
+            if args.save_model:
+                logger.info(f"Saving generated trained model for {dataset_id_str}.")
+                ml_model.save_model(trained_model_path)
+
+
             y_pred_test = ml_model.predict(X_test_df_processed.values)
             y_proba_test = ml_model.predict_proba(X_test_df_processed.values)[:, 1]
             accuracy = accuracy_score(y_test.values, y_pred_test)
@@ -490,6 +497,7 @@ def main(args: argparse.Namespace):
             dataset_id_str = f"config_{i + 1}"
             dataset_pkl_path = run_output_dir / f"dataset_{dataset_id_str}.pkl"
             metadata_pkl_path = run_output_dir / f"metadata_{dataset_id_str}.pkl"
+            # trained_model_path = run_output_dir / f"model_{dataset_id_str}.json"
 
             dataset_df, metadata_df = None, None
             if dataset_pkl_path.exists() and metadata_pkl_path.exists():
@@ -608,7 +616,7 @@ def main(args: argparse.Namespace):
 sys.argv = [
         'run_xai_benchmark.py',  # sys.argv[0]
         '--run_id',  # sys.argv[1]
-        'comprehensive_run_002',  # sys.argv[2]
+        'comprehensive_run_003',  # sys.argv[2]
         '--output_dir',  # sys.argv[3]
         'my_benchmark_results',  # sys.argv[4]
         '--random_state',  # sys.argv[5]
@@ -623,9 +631,13 @@ sys.argv = [
         '0.85',  # sys.argv[16] (string)
         '--sensitivity_top_k',  # sys.argv[17]
         '4',  # sys.argv[18] (string)
-        # '--save_datasets',  # sys.argv[19] (boolean flag)
-        '--load_explanations',  # sys.argv[21] (boolean flag)
-        '--save_evaluation',  # sys.argv[22] (boolean flag)
+        '--generate_dataset',
+        '--save_datasets',  # sys.argv[19] (boolean flag)
+        # '--load_explanations',  # sys.argv[21] (boolean flag)
+        # '--save_evaluation',  # sys.argv[22] (boolean flag)
+        '--save_model',
+        '--skip_explanations',
+        '--skip_evaluation',
         '--generate_plots',  # sys.argv[23] (boolean flag)
         '--calculate_final_scores',  # sys.argv[24] (boolean flag)
         '--parallel_explain',  # sys.argv[25] (boolean flag)
@@ -667,6 +679,8 @@ if __name__ == '__main__':
                         help="Load final aggregated evaluation results (evaluation_all_metrics.pkl) if skipping dataset processing and explanation loading loops.")
     parser.add_argument("--save_evaluation", action="store_true",
                         help="Save final aggregated evaluation results (from current run's evaluations).")
+    parser.add_argument("--save_model", action="store_true",
+                        help="Save final trained ml model for each dataset.")
 
     parser.add_argument("--generate_plots", action="store_true", help="Generate plots.")
     parser.add_argument("--calculate_final_scores", action="store_true", help="Calculate overall and XFA scores.")
