@@ -13,9 +13,11 @@ import numpy as np  # Added for np.floor, np.sum used in proportion calculation
 
 # Assuming these are your refactored module names
 import Evaluation_plots_v2
-import dataset_generation.DataSetGen_v3 as sdg  # Updated import path
+import dataset_generation.DataSetGen_v4 as sdg  # Updated import path
 import Evaluation_v2
 import Explaination_v2
+import model_validation
+
 
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from xgboost import XGBClassifier
@@ -47,10 +49,12 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 TARGET_NAME = "y"
 DEFAULT_DATASETS_SEQUENCES = [
-    [1, 3], [3, 9, 10], [1, 5, 6, 11, 12], [1, 3, 7, 9],
-    [2, 3, 4, 5, 6, 8, 10, 12], [2, 3, 5, 6, 8, 9, 10, 11],
-    [1, 2, 3, 5, 6, 8, 9, 10, 11, 12], [1, 4, 5, 6, 7, 8, 10, 11, 12],
-    [2, 3, 4, 5, 7, 8, 10], [4, 5, 6, 7, 8, 10, 11, 12], [5, 6, 7, 9, 10]
+    [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12] # for testing the impact of the features on each rule individually
+    # [1, 3] original
+    # , [3, 9, 10], [1, 5, 6, 11, 12], [1, 3, 7, 9],
+    # [2, 3, 4, 5, 6, 8, 10, 12], [2, 3, 5, 6, 8, 9, 10, 11],
+    # [1, 2, 3, 5, 6, 8, 9, 10, 11, 12], [1, 4, 5, 6, 7, 8, 10, 11, 12],
+    # [2, 3, 4, 5, 7, 8, 10], [4, 5, 6, 7, 8, 10, 11, 12], [5, 6, 7, 9, 10]
 ]
 
 
@@ -65,6 +69,8 @@ def generate_composite_dataset(
     all_meta_dfs = []
     current_offset = 0
     actual_total_size = 0
+
+
 
     for i, dataset_idx in enumerate(dataset_indices):
         dataset_name_str = f"ds{dataset_idx}"
@@ -82,6 +88,8 @@ def generate_composite_dataset(
             synthetic_ds_obj = sdg.generate_dataset_by_name(name=dataset_name_str, size=prop_size)
             all_data_dfs.append(synthetic_ds_obj.data)
             all_meta_dfs.append(synthetic_ds_obj.meta_data)
+
+
         except Exception as e:
             logger.error(f"Error generating {dataset_name_str}: {e}", exc_info=True)
             continue
@@ -89,9 +97,18 @@ def generate_composite_dataset(
         return pd.DataFrame(), pd.DataFrame(), base_feature_names
     final_data_df = pd.concat(all_data_dfs, ignore_index=True)
     final_meta_df = pd.concat(all_meta_dfs, ignore_index=True)
-    final_data_df = final_data_df.sample(frac=1, random_state=42).reset_index(drop=True)
-    final_meta_df = final_meta_df.loc[final_data_df.index].reset_index(drop=True)
-    logger.info(f"Generated composite dataset with {len(final_data_df)} samples.")
+
+    # logger.inf("=========================================================================")
+    # logger.info("=========================================================================")
+    # pickl_3 = final_data_df.reset_index().merge(final_meta_df.reset_index(), on='index')
+    # for xx in pickl_3.RGS.unique():
+    #     logger.info(xx)
+    #     logger.info(pickl_3.loc[pickl_3.RGS==xx].drop(columns=['RGS','imp_vars', 'index']).corr().sort_values(by='y', ascending=False))
+
+
+    # final_data_df = final_data_df.sample(frac=1, random_state=42).reset_index(drop=True)
+    # final_meta_df = final_meta_df.loc[final_data_df.index].reset_index(drop=True)
+    # logger.info(f"Generated composite dataset with {len(final_data_df)} samples.")
     return final_data_df, final_meta_df, base_feature_names
 
 
@@ -384,7 +401,7 @@ def main(args: argparse.Namespace):
 
     all_run_results_df = pd.DataFrame()
     model_performance_records = []
-    current_feature_names = sdg.BACKGROUND_FEATURE_NAMES
+    current_feature_names = sdg.ALL_FEATURE_NAMES
 
     # Determine if the main processing loop for datasets should run
     # This loop covers generating/loading datasets, training, explaining, and evaluating per config.
@@ -464,6 +481,57 @@ def main(args: argparse.Namespace):
                 'accuracy': accuracy, 'auc': auc
             })
             logger.info(f"Model Performance for {dataset_id_str}: Accuracy={accuracy:.4f}, AUC={auc:.4f}")
+
+            # Stage 2.2 New: Counterfactual Model Validation ---
+            validation_metric='auc'
+            if args.run_validation:
+
+                logger.info(f"Running correlation validation for {dataset_id_str}...")
+
+                # The function requires X_test, y_test, and meta_test_df, all with aligned original indices.
+                # The initial train_test_split provides this alignment.
+                correlation_df = model_validation.validate_feature_correlation(
+                    X_test=X_test_df,  # Use the one with original indices
+                    y_test=y_test,  # Use the one with original indices
+                    meta_test=meta_test_df_aligned  # Use the one with original indices
+                )
+
+                if not correlation_df.empty:
+                    # Save the correlation validation results to a CSV file
+                    correlation_results_path = run_output_dir / f"correlation_validation_{dataset_id_str}.csv"
+                    correlation_df.to_csv(correlation_results_path, index=False)
+                    logger.info(f"Saved correlation validation results to {correlation_results_path}")
+
+
+                logger.info(
+                    f"Running counterfactual validation for {dataset_id_str} using '{validation_metric}' metric...")
+
+                # 1. Get baseline values from the training data
+                # baseline_values = model_validation.get_baseline_values(X_train_df, current_feature_names)
+
+                # 2. Run the validation using the test set
+                # The new function requires X_test, y_test, and meta_test_df, all with aligned original indices.
+                # The initial train_test_split provides this alignment.
+                validation_df = model_validation.validate_model_additive_impact(
+                    ml_model=ml_model,
+                    X_test=X_test_df,  # Use the one with original indices
+                    y_test=y_test,  # Pass the corresponding true labels
+                    meta_test=meta_test_df_aligned,  # Use the one with original indices
+                    metric= validation_metric  # if not auc accuracy is used
+                )
+
+                if not validation_df.empty:
+                    # 3. Analyze and save the results
+                    analysis_summary_df = model_validation.analyze_validation_results(validation_df, meta_test_df_aligned)
+
+                    validation_results_path = run_output_dir / f"validation_impact_{validation_metric}_{dataset_id_str}.csv"
+                    analysis_summary_path = run_output_dir / f"validation_rank_analysis_{validation_metric}_{dataset_id_str}.csv"
+
+                    validation_df.to_csv(validation_results_path, index=False)
+                    analysis_summary_df.to_csv(analysis_summary_path, index=False)
+
+                    logger.info(f"Saved counterfactual validation impact results to {validation_results_path}")
+                    logger.info(f"Saved validation rank analysis summary to {analysis_summary_path}")
 
             # --- Stage 3: Explanation Generation ---
             all_explanations_for_current_config = {}
@@ -622,7 +690,7 @@ sys.argv = [
         '--random_state',  # sys.argv[5]
         '123',  # sys.argv[6] (note: numbers are passed as strings)
         '--dataset_size',  # sys.argv[7]
-        '500',  # sys.argv[8] (string)
+        '10000',  # sys.argv[8] (string)
         '--model_type',  # sys.argv[11]
         'xgboost',  # sys.argv[12]
         '--lime_num_features',  # sys.argv[13]
@@ -636,6 +704,7 @@ sys.argv = [
         # '--load_explanations',  # sys.argv[21] (boolean flag)
         # '--save_evaluation',  # sys.argv[22] (boolean flag)
         '--save_model',
+        '--run_validation',
         '--skip_explanations',
         '--skip_evaluation',
         '--generate_plots',  # sys.argv[23] (boolean flag)
@@ -681,7 +750,8 @@ if __name__ == '__main__':
                         help="Save final aggregated evaluation results (from current run's evaluations).")
     parser.add_argument("--save_model", action="store_true",
                         help="Save final trained ml model for each dataset.")
-
+    parser.add_argument("--run_validation", action="store_true",
+                        help="Run counterfactual validation of the model against metadata.")
     parser.add_argument("--generate_plots", action="store_true", help="Generate plots.")
     parser.add_argument("--calculate_final_scores", action="store_true", help="Calculate overall and XFA scores.")
 
