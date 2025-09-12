@@ -11,6 +11,9 @@ import logging
 from typing import List, Dict, Any, Callable, NamedTuple, Set
 from sklearn.utils import check_random_state, shuffle as util_shuffle
 from itertools import product
+from collections.abc import Iterable
+import numbers
+
 
 
 
@@ -600,7 +603,7 @@ def make_classification_ranked(
     centroids *= weights
 
     # --- Assign clusters to classes ---
-    y = np.zeros(n_samples, dtype=int)
+    # y = np.zeros(n_samples, dtype=int)
     n_clusters_per_class = [n_clusters // n_classes] * n_classes
     for i in range(n_clusters % n_classes):
         n_clusters_per_class[i] += 1
@@ -647,6 +650,124 @@ def make_classification_ranked(
         X[:, :] = X[:, indices]
 
     return X, y
+
+
+def make_blobs_ranked(
+        n_samples=100,
+        n_features=2,
+        *,
+        centers=None,
+        cluster_std=1.0,
+        feature_weights: List[float] = None,
+        center_box=(-10.0, 10.0),
+        shuffle=True,
+        random_state=None,
+        return_centers=False,
+):
+    """
+    Generate anisotropic Gaussian blobs with ranked feature contributions.
+
+    This function maintains the core logic of sklearn's make_blobs but modifies
+    it to create elliptical (anisotropic) clusters instead of circular (isotropic) ones.
+    This is achieved by scaling the standard deviation of each feature according to
+    the provided `feature_weights`. A higher weight for a feature results in a larger
+    spread along that feature's axis, making it more important for cluster separation.
+
+    Args:
+        n_samples (int or array-like): The total number of points or points per cluster.
+        n_features (int): The number of features for each sample.
+        centers (int or array-like, optional): The number of centers or fixed locations.
+        cluster_std (float or array-like): The base standard deviation of the clusters.
+        feature_weights (List[float], optional): A list of weights to control the
+            importance (spread) of each feature. Must match n_features.
+            Defaults to equal weights.
+        center_box (tuple): The bounding box for random cluster center generation.
+        shuffle (bool): Whether to shuffle the samples.
+        random_state (int): Random state for reproducibility.
+        return_centers (bool): If True, return the cluster centers.
+
+    Returns:
+        Tuple: X, y, and optionally centers.
+    """
+    generator = check_random_state(random_state)
+
+    if feature_weights is None:
+        feature_weights = np.ones(n_features)
+
+    if len(feature_weights) != n_features:
+        raise ValueError("Length of feature_weights must match n_features.")
+
+    # Normalize weights to have a mean of 1 to keep overall spread consistent
+    weights = np.array(feature_weights)
+    weights = weights / np.mean(weights)
+
+    # The rest of this section is adapted from sklearn.datasets.make_blobs
+    # to handle center and sample number logic.
+    if isinstance(n_samples, numbers.Integral):
+        if centers is None:
+            centers = 3
+        if isinstance(centers, numbers.Integral):
+            n_centers = centers
+            centers = generator.uniform(
+                center_box[0], center_box[1], size=(n_centers, n_features)
+            )
+        else:
+            centers = np.array(centers)
+            n_features = centers.shape[1]
+            n_centers = centers.shape[0]
+    else:
+        n_centers = len(n_samples)
+        if centers is None:
+            centers = generator.uniform(
+                center_box[0], center_box[1], size=(n_centers, n_features)
+            )
+        if not isinstance(centers, Iterable):
+            raise ValueError(f"Parameter `centers` must be array-like. Got {centers!r} instead")
+        if len(centers) != n_centers:
+            raise ValueError(f"Length of `n_samples` not consistent with number of centers.")
+        centers = np.array(centers)
+        n_features = centers.shape[1]
+
+    if hasattr(cluster_std, "__len__") and len(cluster_std) != n_centers:
+        raise ValueError("Length of `cluster_std` not consistent with number of centers.")
+
+    if isinstance(cluster_std, numbers.Real):
+        cluster_std = np.full(len(centers), cluster_std)
+
+    if isinstance(n_samples, Iterable):
+        n_samples_per_center = n_samples
+    else:
+        n_samples_per_center = [int(n_samples // n_centers)] * n_centers
+        for i in range(n_samples % n_centers):
+            n_samples_per_center[i] += 1
+
+    X = np.zeros((sum(n_samples_per_center), n_features))
+    y = np.zeros(sum(n_samples_per_center), dtype=int)
+
+    # --- Core modification is here ---
+    for i, (n, std) in enumerate(zip(n_samples_per_center, cluster_std)):
+        start_idx = sum(n_samples_per_center[:i])
+        end_idx = start_idx + n
+
+        # Create an anisotropic covariance matrix
+        # The scale for each feature is its base std multiplied by its weight
+        scale_vector = std * weights
+        # Covariance matrix is diagonal with variances (scale^2)
+        cov_matrix = np.diag(scale_vector ** 2)
+
+        # Generate points using a multivariate normal distribution
+        X[start_idx:end_idx] = generator.multivariate_normal(
+            mean=centers[i], cov=cov_matrix, size=n
+        )
+        y[start_idx:end_idx] = i
+
+    if shuffle:
+        X, y = util_shuffle(X, y, random_state=generator)
+
+    if return_centers:
+        return X, y, centers
+    else:
+        return X, y
 
 # --- Dataset Generation Functions ---
 
@@ -1009,7 +1130,7 @@ def generate_ds10(size: int = 10000) -> SyntheticDataset:
    """
     important_feature_names = [f'x{i}' for i in range(37, 42)]  # x37, x38, x39, x40, x41
     # Weights to rank features as: x1 > x2 > x3 > x4 > x5
-    feature_weights = [128, 64, 32, 16, 8]
+    feature_weights = [ 80, 55, 33, 24, 15]
 
     return _generate_from_sklearn(
         size,
@@ -1021,7 +1142,7 @@ def generate_ds10(size: int = 10000) -> SyntheticDataset:
             n_classes=2,
             shuffle=False,  # Wrapper will handle shuffling if needed
             random_state=42,
-            n_clusters=4
+            n_clusters=5
         ),
         important_feature_names,
         "RGS10",
@@ -1029,12 +1150,38 @@ def generate_ds10(size: int = 10000) -> SyntheticDataset:
     )
 
 
+# def generate_ds11(size: int = 10000) -> SyntheticDataset:
+#     return _generate_from_sklearn(
+#         size,
+#         lambda n_samples: make_blobs(n_samples=n_samples, n_features=6, centers=2, cluster_std=8.0, random_state=100),
+#         [f'x{i}' for i in range(41, 47)], "RGS11",
+#         "Based on make_blobs (6 informative features)."
+#     )
+
 def generate_ds11(size: int = 10000) -> SyntheticDataset:
+    """
+    DS19: Uses a custom, ranked version of make_blobs to generate a dataset
+    with a clear feature hierarchy.
+    """
+    # Using 6 features to match the original generate_ds11
+    important_feature_names = [f'x{i}' for i in range(41, 47)]
+    # Weights to rank features as: x41 > x42 > ... > x46
+    feature_weights = [1, 1, 1, 1, 1, 1]
+
     return _generate_from_sklearn(
         size,
-        lambda n_samples: make_blobs(n_samples=n_samples, n_features=6, centers=2, cluster_std=8.0, random_state=100),
-        [f'x{i}' for i in range(41, 47)], "RGS11",
-        "Based on make_blobs (6 informative features)."
+        lambda n_samples: make_blobs_ranked(
+            n_samples=n_samples,
+            n_features=len(important_feature_names),
+            centers=10,
+            cluster_std=0.1,  # A smaller std can make separation clearer
+            feature_weights=feature_weights,
+            shuffle=False,
+            random_state=42
+        ),
+        important_feature_names,
+        "RGS11",
+        "Based on a custom ranked make_blobs."
     )
 
 
