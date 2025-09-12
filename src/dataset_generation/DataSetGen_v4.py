@@ -533,6 +533,7 @@ def make_classification_ranked(
         shuffle=True,
         random_state=None,
 ):
+
     """
     Generate a ranked classification dataset using a weighted hypercube method.
 
