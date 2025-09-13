@@ -50,8 +50,8 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 TARGET_NAME = "y"
 DEFAULT_DATASETS_SEQUENCES = [
-    # [1], [2], [3], [4], [5], [6], [7], [8], [9], [10]
-    [11], [12] # for testing the impact of the features on each rule individually
+     [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11]
+    # [11], [12] # for testing the impact of the features on each rule individually
     # [1, 3] original
     # , [3, 9, 10], [1, 5, 6, 11, 12], [1, 3, 7, 9],
     # [2, 3, 4, 5, 6, 8, 10, 12], [2, 3, 5, 6, 8, 9, 10, 11],

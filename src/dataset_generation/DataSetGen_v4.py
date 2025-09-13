@@ -657,32 +657,30 @@ def make_blobs_ranked(
         n_samples=100,
         n_features=2,
         *,
-        centers=None,
         cluster_std=1.0,
+        center_sep=1.0,
         feature_weights: List[float] = None,
-        center_box=(-10.0, 10.0),
         shuffle=True,
         random_state=None,
         return_centers=False,
 ):
     """
-    Generate anisotropic Gaussian blobs with ranked feature contributions.
+    Generate isotropic Gaussian blobs around deterministically separated centers
+    to create a robustly ranked classification problem.
 
-    This function maintains the core logic of sklearn's make_blobs but modifies
-    it to create elliptical (anisotropic) clusters instead of circular (isotropic) ones.
-    This is achieved by scaling the standard deviation of each feature according to
-    the provided `feature_weights`. A higher weight for a feature results in a larger
-    spread along that feature's axis, making it more important for cluster separation.
+    This robust version is specialized for binary classification (2 centers). It
+    ensures feature importance by directly scaling the center separation by the
+    feature_weights, while keeping the data blobs themselves circular (isotropic).
 
     Args:
-        n_samples (int or array-like): The total number of points or points per cluster.
+        n_samples (int): The total number of points, split between the two blobs.
         n_features (int): The number of features for each sample.
-        centers (int or array-like, optional): The number of centers or fixed locations.
-        cluster_std (float or array-like): The base standard deviation of the clusters.
+        cluster_std (float): The standard deviation of the circular clusters. A smaller
+            value makes the classification task easier.
+        center_sep (float): A factor controlling the overall separation of the
+            two cluster centers. A larger value makes the task easier.
         feature_weights (List[float], optional): A list of weights to control the
-            importance (spread) of each feature. Must match n_features.
-            Defaults to equal weights.
-        center_box (tuple): The bounding box for random cluster center generation.
+            importance of each feature. Must match n_features.
         shuffle (bool): Whether to shuffle the samples.
         random_state (int): Random state for reproducibility.
         return_centers (bool): If True, return the cluster centers.
@@ -691,82 +689,54 @@ def make_blobs_ranked(
         Tuple: X, y, and optionally centers.
     """
     generator = check_random_state(random_state)
+    n_centers = 2  # This version is specialized for binary classification
 
     if feature_weights is None:
-        feature_weights = np.ones(n_features)
+        feature_weights = [2 ** i for i in range(n_features)][::-1]
 
     if len(feature_weights) != n_features:
         raise ValueError("Length of feature_weights must match n_features.")
 
-    # Normalize weights to have a mean of 1 to keep overall spread consistent
     weights = np.array(feature_weights)
-    weights = weights / np.mean(weights)
 
-    # The rest of this section is adapted from sklearn.datasets.make_blobs
-    # to handle center and sample number logic.
-    if isinstance(n_samples, numbers.Integral):
-        if centers is None:
-            centers = 3
-        if isinstance(centers, numbers.Integral):
-            n_centers = centers
-            centers = generator.uniform(
-                center_box[0], center_box[1], size=(n_centers, n_features)
-            )
-        else:
-            centers = np.array(centers)
-            n_features = centers.shape[1]
-            n_centers = centers.shape[0]
-    else:
-        n_centers = len(n_samples)
-        if centers is None:
-            centers = generator.uniform(
-                center_box[0], center_box[1], size=(n_centers, n_features)
-            )
-        if not isinstance(centers, Iterable):
-            raise ValueError(f"Parameter `centers` must be array-like. Got {centers!r} instead")
-        if len(centers) != n_centers:
-            raise ValueError(f"Length of `n_samples` not consistent with number of centers.")
-        centers = np.array(centers)
-        n_features = centers.shape[1]
+    # --- Generate robustly separated centers ---
+    # 1. Start with two base centers at opposite ends of a hypercube diagonal.
+    base_centers = np.array([[-center_sep] * n_features, [center_sep] * n_features])
 
-    if hasattr(cluster_std, "__len__") and len(cluster_std) != n_centers:
-        raise ValueError("Length of `cluster_std` not consistent with number of centers.")
+    # 2. Scale the center locations by the feature weights.
+    # This is the key step: separation along each axis is now directly
+    # proportional to the feature's weight.
+    final_centers = base_centers * weights
 
-    if isinstance(cluster_std, numbers.Real):
-        cluster_std = np.full(len(centers), cluster_std)
-
-    if isinstance(n_samples, Iterable):
-        n_samples_per_center = n_samples
-    else:
-        n_samples_per_center = [int(n_samples // n_centers)] * n_centers
-        for i in range(n_samples % n_centers):
-            n_samples_per_center[i] += 1
+    # --- Balance samples per center ---
+    n_samples_per_center = [n_samples // n_centers] * n_centers
+    for i in range(n_samples % n_centers):
+        n_samples_per_center[i] += 1
 
     X = np.zeros((sum(n_samples_per_center), n_features))
     y = np.zeros(sum(n_samples_per_center), dtype=int)
 
-    # --- Core modification is here ---
-    for i, (n, std) in enumerate(zip(n_samples_per_center, cluster_std)):
+    # --- Generate ISOTROPIC blobs around the WEIGHTED centers ---
+    # The separation is weighted, but the blobs themselves are circular.
+    # This makes the contribution cleaner and less complex.
+    for i, n in enumerate(n_samples_per_center):
         start_idx = sum(n_samples_per_center[:i])
         end_idx = start_idx + n
 
-        # Create an anisotropic covariance matrix
-        # The scale for each feature is its base std multiplied by its weight
-        scale_vector = std * weights
-        # Covariance matrix is diagonal with variances (scale^2)
-        cov_matrix = np.diag(scale_vector ** 2)
+        # Simple isotropic (circular) covariance matrix
+        cov_matrix = np.identity(n_features) * (cluster_std ** 2)
 
-        # Generate points using a multivariate normal distribution
         X[start_idx:end_idx] = generator.multivariate_normal(
-            mean=centers[i], cov=cov_matrix, size=n
+            mean=final_centers[i], cov=cov_matrix, size=n
         )
         y[start_idx:end_idx] = i
 
     if shuffle:
-        X, y = util_shuffle(X, y, random_state=generator)
+        p = generator.permutation(len(X))
+        X, y = X[p], y[p]
 
     if return_centers:
-        return X, y, centers
+        return X, y, final_centers
     else:
         return X, y
 
@@ -1161,28 +1131,30 @@ def generate_ds10(size: int = 10000) -> SyntheticDataset:
 
 def generate_ds11(size: int = 10000) -> SyntheticDataset:
     """
-    DS19: Uses a custom, ranked version of make_blobs to generate a dataset
-    with a clear feature hierarchy.
+    DS11: Uses a custom, ranked version of make_blobs to generate a dataset
+    with a clear feature hierarchy. This is the robust version.
     """
     # Using 6 features to match the original generate_ds11
     important_feature_names = [f'x{i}' for i in range(41, 47)]
     # Weights to rank features as: x41 > x42 > ... > x46
-    feature_weights = [1, 1, 1, 1, 1, 1]
+    feature_weights = [32, 20, 16, 10, 7, 5]
+    # feature_weights = [ , 8, 4, 3, 2, 0.1]
 
     return _generate_from_sklearn(
         size,
         lambda n_samples: make_blobs_ranked(
             n_samples=n_samples,
             n_features=len(important_feature_names),
-            centers=10,
-            cluster_std=0.1,  # A smaller std can make separation clearer
+            # centers=2,  # Fixed to 2 for a robust binary problem
+            cluster_std=2.0,  # Controls tightness of clusters
+            center_sep=.1,  # Controls overall separation
             feature_weights=feature_weights,
-            shuffle=False,
+            shuffle=True,
             random_state=42
         ),
         important_feature_names,
         "RGS11",
-        "Based on a custom ranked make_blobs."
+        "Based on a custom ranked make_blobs (robust version)."
     )
 
 
