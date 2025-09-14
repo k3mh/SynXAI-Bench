@@ -521,6 +521,78 @@ def make_friedman2_ranked(
     return X, y
 
 
+def make_friedman3_ranked(
+        n_samples=100,
+        *,
+        feature_weights: List[float] = None,
+        noise=0.0,
+        random_state=None
+):
+    """
+    Generate the "Friedman #3" regression problem with ranked features.
+
+    The output `y` is created by first scaling the raw features to a common
+    [0, 1] range, then applying weights, and finally using them in a more stable,
+    additive version of the original formula.
+
+    Args:
+        n_samples (int, optional): The number of samples. Defaults to 100.
+        feature_weights (List[float], optional): A list of 4 weights to control the
+            importance of each feature term. Defaults to weights that rank features
+            x1 > x2 > x3 > x4.
+        noise (float, optional): Std of Gaussian noise applied to output. Defaults to 0.0.
+        random_state (int, optional): Random state for reproducibility. Defaults to None.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: X (samples), y (labels). The returned X
+        contains the original, unscaled features.
+    """
+    generator = check_random_state(random_state)
+
+    if feature_weights is None:
+        # Default weights to rank features as: X0 > X1 > X2 > X3
+        feature_weights = [40.0, 30.0, 20.0, 10.0]
+
+    if len(feature_weights) != 4:
+        raise ValueError("feature_weights must be a list or array of length 4.")
+
+    # 1. Generate features in their original ranges
+    X = generator.uniform(size=(n_samples, 4))
+    X[:, 0] *= 100
+    X[:, 1] *= 520 * np.pi
+    X[:, 1] += 40 * np.pi
+    X[:, 3] *= 10
+    X[:, 3] += 1
+
+    # 2. Pre-scale features to a common [0, 1] range (the hidden signal)
+    X_scaled = minmax_scale(X, axis=0)
+
+    # 3. Calculate independent non-linear terms for each feature
+    # epsilon = 1e-6
+    # term0 = X_scaled[:, 0]
+    # term1 = (X_scaled[:, 1] - 0.5) ** 2
+    # term2 = np.sin(np.pi * X_scaled[:, 2])
+    # term3 = 1 / (X_scaled[:, 3] + 0.1)  # Add constant to avoid division by zero
+
+    epsilon = 1e-6
+    term0 = X_scaled[:, 0]
+    term1 = (X_scaled[:, 1] - 0.05)
+    term2 = np.sin(np.pi * X_scaled[:, 2])
+    term3 = 1 / (X_scaled[:, 3] + 0.01)  # Add constant to avoid division by zero
+
+    # 4. Create the final signal as a simple weighted sum of these decoupled terms
+    combined_signal = (
+            feature_weights[0] * term0 +
+            feature_weights[1] * term1 +
+            feature_weights[2] * term2 +
+            feature_weights[3] * term3
+    )
+
+    y = np.arctan(combined_signal) + noise * generator.standard_normal(size=(n_samples))
+
+    # 5. Return the original, unscaled features
+    return X, y
+
 def make_classification_ranked(
         n_samples=100,
         n_features=20,
@@ -1072,17 +1144,46 @@ def generate_ds8(size: int = 10000) -> SyntheticDataset:
         "Based on a ranked make_friedman2 (4 features); target binarized."
     )
 
+# def generate_ds9(size: int = 10000) -> SyntheticDataset:
+#     def friedman_binary(n_samples):
+#         X, y_reg = make_friedman3(n_samples=n_samples, random_state=42)
+#         y_bin = np.where(y_reg > np.median(y_reg), 1, 0)
+#         return X, y_bin
+#
+#     return _generate_from_sklearn(
+#         size, friedman_binary, [f'x{i}' for i in range(33, 37)], "RGS9",
+#         "Based on make_friedman3 (4 features); target binarized."
+#     )
+
 def generate_ds9(size: int = 10000) -> SyntheticDataset:
-    def friedman_binary(n_samples):
-        X, y_reg = make_friedman3(n_samples=n_samples, random_state=42)
+    """
+    DS9: Uses features from a ranked version of make_friedman3, which are then
+    used to create a binarized target.
+    """
+    important_feature_names = [f'x{i}' for i in range(33, 37)]
+    # Weights to rank features as: x33 > x34 > x35 > x36.
+    # As with Friedman2, pre-scaling in the ranked generator means these weights
+    # will now directly control the feature contribution.
+    feature_weights = [70, 50.0, 20.0, 8/10]
+
+    def friedman_binary_ranked(n_samples):
+        # Call the ranked version of the generator
+        X, y_reg = make_friedman3_ranked(
+            n_samples=n_samples,
+            feature_weights=feature_weights,
+            random_state=42
+        )
+        # Binarize the regression output
         y_bin = np.where(y_reg > np.median(y_reg), 1, 0)
         return X, y_bin
 
     return _generate_from_sklearn(
-        size, friedman_binary, [f'x{i}' for i in range(33, 37)], "RGS9",
-        "Based on make_friedman3 (4 features); target binarized."
+        size,
+        friedman_binary_ranked,
+        important_feature_names,
+        "RGS9",
+        "Based on a ranked make_friedman3 (4 features); target binarized."
     )
-
 
 # def generate_ds10(size: int = 10000) -> SyntheticDataset:
 #     return _generate_from_sklearn(
