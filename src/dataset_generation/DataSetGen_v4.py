@@ -1164,7 +1164,7 @@ def generate_ds9(size: int = 10000) -> SyntheticDataset:
     # Weights to rank features as: x33 > x34 > x35 > x36.
     # As with Friedman2, pre-scaling in the ranked generator means these weights
     # will now directly control the feature contribution.
-    feature_weights = [70, 50.0, 20.0, 8/10]
+    feature_weights = [70, 50.0, 20.0, 5/10]
 
     def friedman_binary_ranked(n_samples):
         # Call the ranked version of the generator

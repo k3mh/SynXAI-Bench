@@ -7,7 +7,7 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
-
+import itertools
 import pandas as pd
 import numpy as np  # Added for np.floor, np.sum used in proportion calculation
 
@@ -47,17 +47,50 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
+def generate_all_combinations(start: int, end: int) -> List[List[int]]:
+    """
+    Generates all unique combinations of numbers within a given range.
 
+    Each combination will have at least two numbers, and there will be no
+    repetitions within a combination.
+
+    Args:
+        start (int): The starting number of the range (inclusive).
+        end (int): The ending number of the range (inclusive).
+
+    Returns:
+        List[List[int]]: A list containing all possible combinations as lists.
+    """
+    if start >= end:
+        print("Error: Start number must be less than end number.")
+        return []
+
+    numbers = range(start, end + 1)
+    all_combinations = []
+
+    # Iterate through all possible lengths for the combinations, from 2 up to the total number of items.
+    # For a range of 1 to 12, the length will go from 2 to 12.
+    for r in range(2, len(numbers) + 1):
+        # The itertools.combinations function generates unique combinations of length 'r'.
+        # It returns tuples, so we convert them to lists.
+        combos_at_length_r = [list(c) for c in itertools.combinations(numbers, r)]
+        all_combinations.extend(combos_at_length_r)
+
+    return all_combinations
 TARGET_NAME = "y"
-DEFAULT_DATASETS_SEQUENCES = [
-     [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11 ]
-    # [11], [12] # for testing the impact of the features on each rule individually
-    # [1, 3] original
-    # , [3, 9, 10], [1, 5, 6, 11, 12], [1, 3, 7, 9],
-    # [2, 3, 4, 5, 6, 8, 10, 12], [2, 3, 5, 6, 8, 9, 10, 11],
-    # [1, 2, 3, 5, 6, 8, 9, 10, 11, 12], [1, 4, 5, 6, 7, 8, 10, 11, 12],
-    # [2, 3, 4, 5, 7, 8, 10], [4, 5, 6, 7, 8, 10, 11, 12], [5, 6, 7, 9, 10]
-]
+DEFAULT_DATASETS_SEQUENCES = generate_all_combinations(1, 12)
+logger.info("=====================================")
+logger.info(len(DEFAULT_DATASETS_SEQUENCES))
+
+# [
+#      [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11 ], [12]
+#     # [11], [12] # for testing the impact of the features on each rule individually
+#     # [1, 3] original
+#     # , [3, 9, 10], [1, 5, 6, 11, 12], [1, 3, 7, 9],
+#     # [2, 3, 4, 5, 6, 8, 10, 12], [2, 3, 5, 6, 8, 9, 10, 11],
+#     # [1, 2, 3, 5, 6, 8, 9, 10, 11, 12], [1, 4, 5, 6, 7, 8, 10, 11, 12],
+#     # [2, 3, 4, 5, 7, 8, 10], [4, 5, 6, 7, 8, 10, 11, 12], [5, 6, 7, 9, 10]
+# ]
 
 
 # --- Helper Functions from original script (generate_composite_dataset, train_model) ---
@@ -686,7 +719,7 @@ def main(args: argparse.Namespace):
 sys.argv = [
         'run_xai_benchmark.py',  # sys.argv[0]
         '--run_id',  # sys.argv[1]
-        'comprehensive_run_003',  # sys.argv[2]
+        'all_combinations_run_001',  # sys.argv[2]
         '--output_dir',  # sys.argv[3]
         'my_benchmark_results',  # sys.argv[4]
         '--random_state',  # sys.argv[5]
