@@ -1,5 +1,3 @@
-# File: model_validation.py
-
 import pandas as pd
 import numpy as np
 import logging
@@ -94,6 +92,8 @@ def validate_model_additive_impact(
     Validates a model by measuring the additive impact on performance (AUC or Accuracy)
     as important features for a rule group (RGS) are added back one by one.
 
+    This function operates on ALL provided test samples.
+
     The process starts by neutralizing all important features from all RGS groups
     globally across the test set by shuffling them. Then, for each RGS group, it
     evaluates performance on its subset of this neutralized data. It then iteratively
@@ -111,6 +111,66 @@ def validate_model_additive_impact(
         pd.DataFrame: A DataFrame where each row represents the impact of adding back one
                       feature for one RGS group, measured by the gain in performance.
     """
+    # This is an internal helper that contains the core logic.
+    return _perform_additive_impact_validation(
+        ml_model=ml_model,
+        X_test=X_test,
+        y_test=y_test,
+        meta_test=meta_test,
+        metric=metric,
+        filter_correct_predictions=False
+    )
+
+
+def validate_model_additive_impact_on_correct_samples(
+        ml_model: Any,
+        X_test: pd.DataFrame,
+        y_test: pd.Series,
+        meta_test: pd.DataFrame,
+        metric: str = 'auc'
+) -> pd.DataFrame:
+    """
+    Validates a model by measuring the additive impact on performance, but ONLY
+    on the subset of test samples that the model initially predicted correctly.
+
+    The process is identical to `validate_model_additive_impact`, but all operations
+    (neutralization, subsetting, and performance calculation) are performed on
+    the filtered set of correctly predicted instances.
+
+    Args:
+        ml_model (Any): The trained model with `predict` and `predict_proba` methods.
+        X_test (pd.DataFrame): The test data features.
+        y_test (pd.Series): The corresponding true labels for the test data.
+        meta_test (pd.DataFrame): The metadata for the test data.
+        metric (str): The performance metric to use for validation ('auc' or 'accuracy').
+
+    Returns:
+        pd.DataFrame: A DataFrame with the additive impact results for the
+                      correctly predicted samples.
+    """
+    # This function acts as a wrapper that sets the flag to filter predictions.
+    return _perform_additive_impact_validation(
+        ml_model=ml_model,
+        X_test=X_test,
+        y_test=y_test,
+        meta_test=meta_test,
+        metric=metric,
+        filter_correct_predictions=True
+    )
+
+
+def _perform_additive_impact_validation(
+        ml_model: Any,
+        X_test: pd.DataFrame,
+        y_test: pd.Series,
+        meta_test: pd.DataFrame,
+        metric: str,
+        filter_correct_predictions: bool
+) -> pd.DataFrame:
+    """
+    Internal core function to perform additive impact validation.
+    It can operate on either all test samples or only correctly predicted ones.
+    """
     if not (X_test.index.equals(meta_test.index) and X_test.index.equals(y_test.index)):
         logger.error("X_test, y_test, and meta_test must have identical indices for alignment.")
         raise ValueError("Index mismatch between input DataFrames/Series.")
@@ -119,12 +179,27 @@ def validate_model_additive_impact(
 
     validation_results = []
 
-    # 1. Global Neutralization
+    # --- Optional Initial Filtering Step ---
+    if filter_correct_predictions:
+        logger.info("Filtering test set to include only correctly predicted samples.")
+        y_pred = ml_model.predict(X_test.values)
+        correct_indices = y_test.index[y_test == y_pred]
+
+        X_test = X_test.loc[correct_indices]
+        y_test = y_test.loc[correct_indices]
+        meta_test = meta_test.loc[correct_indices]
+
+        logger.info(f"Proceeding with {len(X_test)} correctly predicted samples out of {len(y_pred)} total.")
+        if X_test.empty:
+            logger.warning("No correctly predicted samples found. Cannot perform validation.")
+            return pd.DataFrame()
+
+    # --- 1. Global Neutralization ---
     all_important_features = set()
     for imp_vars_list in meta_test['imp_vars']:
         if isinstance(imp_vars_list, list):
             all_important_features.update(imp_vars_list)
-    all_important_features.discard('')  # Remove empty string if present
+    all_important_features.discard('')
     all_important_features = sorted(list(all_important_features))
 
     logger.info(f"Identified {len(all_important_features)} unique important features for global neutralization.")
@@ -136,7 +211,7 @@ def validate_model_additive_impact(
         else:
             logger.warning(f"Global important feature '{feature}' not in X_test columns.")
 
-    # 2. Per-RGS Additive Analysis
+    # --- 2. Per-RGS Additive Analysis ---
     logger.info(f"Starting per-RGS additive validation for {len(meta_test['RGS'].unique())} groups using '{metric}'.")
     for rgs_group in meta_test['RGS'].unique():
         group_indices = meta_test[meta_test['RGS'] == rgs_group].index
@@ -157,7 +232,7 @@ def validate_model_additive_impact(
             if metric == 'auc':
                 original_probas = ml_model.predict_proba(X_test_group.values)[:, 1]
                 original_group_score = roc_auc_score(y_test_group, original_probas)
-            else:  # accuracy
+            else:
                 original_preds = ml_model.predict(X_test_group.values)
                 original_group_score = accuracy_score(y_test_group, original_preds)
         except Exception as e:
@@ -169,11 +244,11 @@ def validate_model_additive_impact(
             if metric == 'auc':
                 neutralized_probas = ml_model.predict_proba(neutralized_X_group_slice.values)[:, 1]
                 previous_score = roc_auc_score(y_test_group, neutralized_probas)
-            else:  # accuracy
+            else:
                 neutralized_preds = ml_model.predict(neutralized_X_group_slice.values)
                 previous_score = accuracy_score(y_test_group, neutralized_preds)
         except Exception as e:
-            logger.error(f"Could not calculate initial score for RGS '{rgs_group}' on globally neutralized data: {e}")
+            logger.error(f"Could not calculate initial score for RGS '{rgs_group}' on neutralized data: {e}")
             continue
 
         current_counterfactual_X_group = neutralized_X_group_slice.copy()
@@ -186,7 +261,7 @@ def validate_model_additive_impact(
                 if metric == 'auc':
                     new_probas = ml_model.predict_proba(current_counterfactual_X_group.values)[:, 1]
                     new_score = roc_auc_score(y_test_group, new_probas)
-                else:  # accuracy
+                else:
                     new_preds = ml_model.predict(current_counterfactual_X_group.values)
                     new_score = accuracy_score(y_test_group, new_preds)
             except Exception as e:
@@ -227,7 +302,7 @@ def analyze_validation_results(
     and compare this ranking with the metadata.
 
     Args:
-        validation_df (pd.DataFrame): The DataFrame produced by `validate_model_additive_impact`.
+        validation_df (pd.DataFrame): The DataFrame produced by one of the `validate_model_additive_impact` functions.
         meta_test (pd.DataFrame): The test metadata, used to get the ground truth feature order.
 
     Returns:
@@ -267,57 +342,3 @@ def analyze_validation_results(
         })
 
     return pd.DataFrame(analysis_results).sort_values(by='kendalls_tau_correlation', ascending=False)
-
-
-if __name__ == '__main__':
-    # --- Example Usage ---
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.model_selection import train_test_split
-
-    feature_names_example = [f'f{i}' for i in range(10)]
-    X = pd.DataFrame(np.random.rand(200, 10), columns=feature_names_example)
-    y = pd.Series(np.random.randint(0, 2, 200))
-
-    meta_list = []
-    for i in range(200):
-        if i % 4 == 0:
-            meta_list.append({'imp_vars': ['f1', 'f3', 'f5'], 'RGS': 'group_A'})
-        elif i % 4 == 1:
-            meta_list.append({'imp_vars': ['f2', 'f4'], 'RGS': 'group_B'})
-        else:
-            meta_list.append({'imp_vars': ['f7'], 'RGS': 'group_D'})
-    meta = pd.DataFrame(meta_list)
-
-    X_train_ex, X_test_ex, y_train_ex, y_test_ex, _, meta_test_ex = train_test_split(
-        X, y, meta, test_size=0.5, random_state=42, stratify=y
-    )
-
-    model_ex = RandomForestClassifier(random_state=42)
-    model_ex.fit(X_train_ex, y_train_ex)
-
-    print("-" * 50)
-
-    # --- Run Correlation Validation Step ---
-    print("\n--- Running Correlation Validation ---")
-    correlation_results_df = validate_feature_correlation(
-        X_test=X_test_ex, y_test=y_test_ex, meta_test=meta_test_ex
-    )
-    if not correlation_results_df.empty:
-        print("\n--- Correlation Validation Summary ---")
-        pd.set_option('display.max_colwidth', None)
-        print(correlation_results_df)
-        print("-" * 50)
-
-    # --- Run Additive Impact Validation using AUC ---
-    print("\n--- Running Additive Validation with AUC Metric ---")
-    validation_results_auc = validate_model_additive_impact(
-        ml_model=model_ex, X_test=X_test_ex, y_test=y_test_ex,
-        meta_test=meta_test_ex, metric='auc'
-    )
-    if not validation_results_auc.empty:
-        analysis_summary_auc = analyze_validation_results(validation_results_auc, meta_test_ex)
-        print("\n--- Additive Impact Results (AUC) ---")
-        print(validation_results_auc)
-        print("\n--- Analysis Summary (AUC) ---")
-        print(analysis_summary_auc)
-        print("-" * 50)

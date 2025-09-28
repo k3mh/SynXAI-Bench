@@ -24,6 +24,8 @@ from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 
+from src.run_xai_benchmark import DEFAULT_DATASETS_SEQUENCES
+
 # --- Global Configuration & Logging ---
 # BasicConfig should ideally be called only once.
 # If other modules also call it, it might not behave as expected.
@@ -77,20 +79,31 @@ def generate_all_combinations(start: int, end: int) -> List[List[int]]:
         all_combinations.extend(combos_at_length_r)
 
     return all_combinations
-TARGET_NAME = "y"
-DEFAULT_DATASETS_SEQUENCES = generate_all_combinations(1, 12)
-logger.info("=====================================")
-logger.info(len(DEFAULT_DATASETS_SEQUENCES))
 
-# [
-#      [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11 ], [12]
+TARGET_NAME = "y"
+# DEFAULT_DATASETS_SEQUENCES = generate_all_combinations(1, 12)
+# logger.info("=====================================")
+# logger.info(len(DEFAULT_DATASETS_SEQUENCES))
+DEFAULT_DATASETS_SEQUENCES =[
+    [11, 12],
+    [5, 8, 9, 11, 12],
+    [2, 4, 8, 10],
+    [1, 3, 7, 9, 10, 12],
+    [1, 6, 7, 9, 10, 12],
+    [2, 3, 4, 8, 10, 12],
+    [2, 3, 6, 7, 8, 10],
+    [2, 3, 4, 6, 7, 8, 11],
+    [1, 2, 3, 6, 8, 10, 12],
+    [2, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+    [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        # [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11 ], [12]
 #     # [11], [12] # for testing the impact of the features on each rule individually
 #     # [1, 3] original
 #     # , [3, 9, 10], [1, 5, 6, 11, 12], [1, 3, 7, 9],
 #     # [2, 3, 4, 5, 6, 8, 10, 12], [2, 3, 5, 6, 8, 9, 10, 11],
 #     # [1, 2, 3, 5, 6, 8, 9, 10, 11, 12], [1, 4, 5, 6, 7, 8, 10, 11, 12],
 #     # [2, 3, 4, 5, 7, 8, 10], [4, 5, 6, 7, 8, 10, 11, 12], [5, 6, 7, 9, 10]
-# ]
+]
 
 
 # --- Helper Functions from original script (generate_composite_dataset, train_model) ---
@@ -153,7 +166,10 @@ def train_model(model_name: str, X_train: pd.DataFrame, y_train: pd.Series, rand
     elif model_name.lower() == 'extratrees':
         model = ExtraTreesClassifier(n_jobs=-1, random_state=random_state)
     elif model_name.lower() == 'xgboost':
-        model = XGBClassifier(random_state=random_state, use_label_encoder=False, eval_metric='logloss')
+        model = XGBClassifier(n_estimators=1600, max_depth=5, random_state=random_state
+                              , use_label_encoder=False ,
+                              # eval_metric='auc',
+                              learning_rate=0.05, subsample=1)
     else:
         raise ValueError(f"Unsupported model_name: {model_name}")
     logger.info(f"Training {model_name} model...")
@@ -174,6 +190,7 @@ def setup_run_directory_and_config(args: argparse.Namespace) -> Tuple[Path, List
 
     dataset_proportions_list = []
     for seq in dataset_configs_to_run:
+        gc.collect()
         if not seq: continue
         prop_val = 1.0 / len(seq)
         props = [prop_val] * len(seq)
@@ -493,7 +510,7 @@ def main(args: argparse.Namespace):
             logger.info(f"Processing (splitting, training) for {dataset_id_str}...")
             X_train_df, X_test_df, y_train, y_test = train_test_split(
                 dataset_df[current_feature_names], dataset_df[TARGET_NAME],
-                train_size=0.80, random_state=args.random_state, stratify=dataset_df[TARGET_NAME]
+                train_size=0.70, random_state=args.random_state, stratify=dataset_df[TARGET_NAME]
             )
             meta_test_df_aligned = metadata_df.loc[X_test_df.index].copy()
             meta_test_df_aligned['instance_idx'] = X_test_df.index
@@ -567,6 +584,32 @@ def main(args: argparse.Namespace):
 
                     logger.info(f"Saved counterfactual validation impact results to {validation_results_path}")
                     logger.info(f"Saved validation rank analysis summary to {analysis_summary_path}")
+
+                logger.info(
+                    f"Running additive validation on CORRECT SAMPLES ONLY for {dataset_id_str} using '{validation_metric}'...")
+
+                validation_df_correct = model_validation.validate_model_additive_impact_on_correct_samples(
+                    ml_model=ml_model,
+                    X_test=X_test_df,
+                    y_test=y_test,
+                    meta_test=meta_test_df_aligned,
+                    metric=validation_metric
+                )
+
+                if not validation_df_correct.empty:
+                    analysis_summary_correct_df = model_validation.analyze_validation_results(validation_df_correct,
+                                                                                              meta_test_df_aligned)
+
+                    # Save results to a different file specific to "correct samples"
+                    validation_results_correct_path = run_output_dir / f"validation_impact_correct_samples_{validation_metric}_{dataset_id_str}.csv"
+                    analysis_summary_correct_path = run_output_dir / f"validation_rank_analysis_correct_samples_{validation_metric}_{dataset_id_str}.csv"
+
+                    validation_df_correct.to_csv(validation_results_correct_path, index=False)
+                    analysis_summary_correct_df.to_csv(analysis_summary_correct_path, index=False)
+
+                    logger.info(
+                        f"Saved validation impact results (Correct Samples) to {validation_results_correct_path}")
+                    logger.info(f"Saved validation rank analysis (Correct Samples) to {analysis_summary_correct_path}")
 
             # --- Stage 3: Explanation Generation ---
             all_explanations_for_current_config = {}
@@ -719,13 +762,13 @@ def main(args: argparse.Namespace):
 sys.argv = [
         'run_xai_benchmark.py',  # sys.argv[0]
         '--run_id',  # sys.argv[1]
-        'all_combinations_run_001',  # sys.argv[2]
+        'SynXAI-DB_run_001',  # sys.argv[2]
         '--output_dir',  # sys.argv[3]
         'my_benchmark_results',  # sys.argv[4]
         '--random_state',  # sys.argv[5]
         '123',  # sys.argv[6] (note: numbers are passed as strings)
         '--dataset_size',  # sys.argv[7]
-        '10000',  # sys.argv[8] (string)
+        '100000',  # sys.argv[8] (string)
         '--model_type',  # sys.argv[11]
         'xgboost',  # sys.argv[12]
         '--lime_num_features',  # sys.argv[13]
