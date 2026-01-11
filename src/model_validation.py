@@ -170,6 +170,7 @@ def _perform_additive_impact_validation(
     """
     Internal core function to perform additive impact validation.
     It can operate on either all test samples or only correctly predicted ones.
+    This version uses a full local neutralization to ensure a true baseline.
     """
     if not (X_test.index.equals(meta_test.index) and X_test.index.equals(y_test.index)):
         logger.error("X_test, y_test, and meta_test must have identical indices for alignment.")
@@ -194,24 +195,7 @@ def _perform_additive_impact_validation(
             logger.warning("No correctly predicted samples found. Cannot perform validation.")
             return pd.DataFrame()
 
-    # --- 1. Global Neutralization ---
-    all_important_features = set()
-    for imp_vars_list in meta_test['imp_vars']:
-        if isinstance(imp_vars_list, list):
-            all_important_features.update(imp_vars_list)
-    all_important_features.discard('')
-    all_important_features = sorted(list(all_important_features))
-
-    logger.info(f"Identified {len(all_important_features)} unique important features for global neutralization.")
-
-    globally_neutralized_X_test = X_test.copy()
-    for feature in all_important_features:
-        if feature in globally_neutralized_X_test.columns:
-            globally_neutralized_X_test[feature] = np.random.permutation(X_test[feature].values)
-        else:
-            logger.warning(f"Global important feature '{feature}' not in X_test columns.")
-
-    # --- 2. Per-RGS Additive Analysis ---
+    # --- Per-RGS Additive Analysis with Full Local Neutralization ---
     logger.info(f"Starting per-RGS additive validation for {len(meta_test['RGS'].unique())} groups using '{metric}'.")
     for rgs_group in meta_test['RGS'].unique():
         group_indices = meta_test[meta_test['RGS'] == rgs_group].index
@@ -228,31 +212,38 @@ def _perform_additive_impact_validation(
             logger.debug(f"Skipping RGS group '{rgs_group}' as it has no important features defined.")
             continue
 
+        # --- 1. Calculate Original Score for this group ---
         try:
             if metric == 'auc':
                 original_probas = ml_model.predict_proba(X_test_group.values)[:, 1]
                 original_group_score = roc_auc_score(y_test_group, original_probas)
-            else:
+            else:  # accuracy
                 original_preds = ml_model.predict(X_test_group.values)
                 original_group_score = accuracy_score(y_test_group, original_preds)
         except Exception as e:
             logger.error(f"Could not calculate original score for RGS group '{rgs_group}': {e}")
             original_group_score = np.nan
 
+        # --- 2. Full Local Neutralization: Shuffle ALL features within the group ---
+        fully_neutralized_X_group = X_test_group.copy()
+        for feature in fully_neutralized_X_group.columns:
+            fully_neutralized_X_group[feature] = np.random.permutation(X_test_group[feature].values)
+
+        # --- 3. Calculate True Baseline Score on fully shuffled data ---
         try:
-            neutralized_X_group_slice = globally_neutralized_X_test.loc[group_indices]
             if metric == 'auc':
-                neutralized_probas = ml_model.predict_proba(neutralized_X_group_slice.values)[:, 1]
+                neutralized_probas = ml_model.predict_proba(fully_neutralized_X_group.values)[:, 1]
                 previous_score = roc_auc_score(y_test_group, neutralized_probas)
-            else:
-                neutralized_preds = ml_model.predict(neutralized_X_group_slice.values)
+            else:  # accuracy
+                neutralized_preds = ml_model.predict(fully_neutralized_X_group.values)
                 previous_score = accuracy_score(y_test_group, neutralized_preds)
         except Exception as e:
-            logger.error(f"Could not calculate initial score for RGS '{rgs_group}' on neutralized data: {e}")
+            logger.error(f"Could not calculate initial score for RGS '{rgs_group}' on locally neutralized data: {e}")
             continue
 
-        current_counterfactual_X_group = neutralized_X_group_slice.copy()
+        current_counterfactual_X_group = fully_neutralized_X_group.copy()
         active_features_at_step = []
+        # Iterate from least to most important feature
         for feature_to_add_back in reversed(rgs_important_features):
             current_counterfactual_X_group[feature_to_add_back] = X_test_group[feature_to_add_back]
             active_features_at_step.append(feature_to_add_back)
@@ -261,7 +252,7 @@ def _perform_additive_impact_validation(
                 if metric == 'auc':
                     new_probas = ml_model.predict_proba(current_counterfactual_X_group.values)[:, 1]
                     new_score = roc_auc_score(y_test_group, new_probas)
-                else:
+                else:  # accuracy
                     new_preds = ml_model.predict(current_counterfactual_X_group.values)
                     new_score = accuracy_score(y_test_group, new_preds)
             except Exception as e:
@@ -342,3 +333,4 @@ def analyze_validation_results(
         })
 
     return pd.DataFrame(analysis_results).sort_values(by='kendalls_tau_correlation', ascending=False)
+

@@ -309,7 +309,49 @@ def make_gaussian_quantiles_ranked(
 
     return X, y
 
-
+#
+# def make_hastie_10_2_ranked(
+#         n_samples=12000,
+#         *,
+#         feature_weights: List[float] = None,
+#         random_state=None
+# ):
+#     """
+#     Generate data for binary classification with ranked features, based on
+#     Hastie et al. 2009, Example 10.2.
+#
+#     The ten features are standard independent Gaussian and the target ``y`` is
+#     defined by a weighted sum of squares:
+#     y[i] = 1 if np.sum(weights * (X[i] ** 2)) > 9.34 else -1
+#
+#     Args:
+#         n_samples (int, optional): The number of samples. Defaults to 12000.
+#         feature_weights (List[float], optional): A list of 10 weights to control the
+#             importance of each feature. Defaults to equal weights of 1.0.
+#         random_state (int, optional): Random state for reproducibility. Defaults to None.
+#
+#     Returns:
+#         Tuple[np.ndarray, np.ndarray]: X (samples), y (labels).
+#     """
+#     rs = check_random_state(random_state)
+#
+#     if feature_weights is None:
+#         feature_weights = np.ones(10)
+#
+#     if len(feature_weights) != 10:
+#         raise ValueError("feature_weights must be a list or array of length 10.")
+#
+#     shape = (n_samples, 10)
+#     X = rs.normal(size=shape).reshape(shape)
+#
+#     # Calculate the weighted sum of squares
+#     weighted_sum_of_squares = ((X ** 2.0) * feature_weights).sum(axis=1)
+#
+#     threshold = np.median(weighted_sum_of_squares)
+#
+#     y = (weighted_sum_of_squares > threshold).astype(np.float64, copy=False)
+#
+#     return X, y
 def make_hastie_10_2_ranked(
         n_samples=12000,
         *,
@@ -317,18 +359,16 @@ def make_hastie_10_2_ranked(
         random_state=None
 ):
     """
-    Generate data for binary classification with ranked features, based on
-    Hastie et al. 2009, Example 10.2.
+    Generate data for binary classification with ranked features.
 
-    The ten features are standard independent Gaussian and the target ``y`` is
-    defined by a weighted sum of squares:
-    y[i] = 1 if np.sum(weights * (X[i] ** 2)) > 9.34 else -1
+    This function implements the "hidden signal" pattern. It returns the base
+    features `X` and a target `y` that is calculated from a hidden,
+    non-linear transformation of `X` (the weighted sum of squares).
 
     Args:
-        n_samples (int, optional): The number of samples. Defaults to 12000.
-        feature_weights (List[float], optional): A list of 10 weights to control the
-            importance of each feature. Defaults to equal weights of 1.0.
-        random_state (int, optional): Random state for reproducibility. Defaults to None.
+        n_samples (int): The number of samples.
+        feature_weights (List[float]): A list of 10 weights for feature importance.
+        random_state (int): Random state for reproducibility.
 
     Returns:
         Tuple[np.ndarray, np.ndarray]: X (samples), y (labels).
@@ -344,15 +384,91 @@ def make_hastie_10_2_ranked(
     shape = (n_samples, 10)
     X = rs.normal(size=shape).reshape(shape)
 
-    # Calculate the weighted sum of squares
+    # This is the "hidden signal" calculation
     weighted_sum_of_squares = ((X ** 2.0) * feature_weights).sum(axis=1)
 
+    # Use the median of the signal to create a balanced binary target
     threshold = np.median(weighted_sum_of_squares)
 
     y = (weighted_sum_of_squares > threshold).astype(np.float64, copy=False)
+    y[y == 0.0] = -1.0
+
+    # Return the original X, not the modified one
+    return X, y
+
+
+def make_friedman1_ranked(
+        n_samples=100,
+        n_features=10,
+        *,
+        feature_weights: List[float] = None,
+        noise=0.0,
+        random_state=None
+):
+    """
+    Generate a modified "Friedman #1" regression problem with 5 ranked features.
+    """
+    if n_features < 5:
+        raise ValueError("n_features must be at least 5.")
+
+    generator = check_random_state(random_state)
+
+    if feature_weights is None:
+        feature_weights = [20.0, 16.0, 12.0, 8.0, 4.0]
+
+    if len(feature_weights) != 5:
+        raise ValueError("feature_weights must be a list or array of length 5.")
+
+    X = generator.uniform(size=(n_samples, n_features))
+
+    y = (
+            feature_weights[0] * np.sin(np.pi * X[:, 0])
+            + feature_weights[1] * np.sin(np.pi * X[:, 1])
+            + feature_weights[2] * (X[:, 2] - 0.5) ** 2
+            + feature_weights[3] * X[:, 3]
+            + feature_weights[4] * X[:, 4]
+            + noise * generator.standard_normal(size=(n_samples))
+    )
 
     return X, y
 
+
+def make_friedman2_ranked(
+        n_samples=100,
+        *,
+        feature_weights: List[float] = None,
+        noise=0.0,
+        random_state=None
+):
+    """
+    Generate the "Friedman #2" regression problem with ranked features.
+    """
+    generator = check_random_state(random_state)
+
+    if feature_weights is None:
+        feature_weights = [40.0, 15.0, 7.0, 2.0]
+
+    if len(feature_weights) != 4:
+        raise ValueError("feature_weights must be a list or array of length 4.")
+
+    X = generator.uniform(size=(n_samples, 4))
+    X[:, 0] *= 100
+    X[:, 1] *= 520 * np.pi
+    X[:, 1] += 40 * np.pi
+    X[:, 3] *= 10
+    X[:, 3] += 1
+
+    X_scaled = minmax_scale(X, axis=0)
+
+    X_w = X_scaled * feature_weights
+
+    epsilon = 1e-6
+    y = (
+                X_w[:, 0] ** 2
+                + (X_w[:, 1] * X_w[:, 2] - 1 / (X_w[:, 1] * X_w[:, 3] + epsilon)) ** 2
+        ) ** 0.5 + noise * generator.standard_normal(size=(n_samples))
+
+    return X, y
 
 def make_friedman1_ranked(
         n_samples=100,
@@ -593,19 +709,148 @@ def make_friedman3_ranked(
     # 5. Return the original, unscaled features
     return X, y
 
+# def make_classification_ranked(
+#         n_samples=100,
+#         n_features=20,
+#         *,
+#         n_informative=2,
+#         n_clusters=None,
+#         feature_weights: List[float] = None,
+#         n_classes=2,
+#         class_sep=1.0,
+#         shuffle=True,
+#         random_state=None,
+# ):
+#
+#     """
+#     Generate a ranked classification dataset using a weighted hypercube method.
+#
+#     This function modifies the logic of sklearn's make_classification to allow for
+#     direct control over the importance of informative features via `feature_weights`.
+#     It works by generating clusters at the vertices of a hypercube, then stretching
+#     the hypercube along each dimension according to the provided weights. A larger
+#     weight makes a feature more important for class separation.
+#
+#     Args:
+#         n_samples (int): The number of samples.
+#         n_features (int): The total number of features.
+#         n_informative (int): The number of informative features.
+#         n_clusters (int, optional): The number of clusters per class. If None, it defaults
+#             to 2**n_informative, using all vertices of the hypercube.
+#         feature_weights (List[float]): A list of weights for the informative
+#             features, determining their rank and contribution. Must match
+#             n_informative. Defaults to descending weights.
+#         n_classes (int): The number of classes.
+#         class_sep (float): The factor multiplying the hypercube size, controlling
+#                            the separation between clusters.
+#         shuffle (bool): Whether to shuffle samples and features.
+#         random_state (int): Random state for reproducibility.
+#
+#     Returns:
+#         Tuple[np.ndarray, np.ndarray]: X (samples), y (labels).
+#     """
+#     generator = check_random_state(random_state)
+#
+#     if feature_weights is None:
+#         # Default to descending weights, e.g., 2^(n-1), 2^(n-2), ..., 1
+#         feature_weights = [2 ** i for i in range(n_informative)][::-1]
+#
+#     if len(feature_weights) != n_informative:
+#         raise ValueError("Length of feature_weights must match n_informative.")
+#
+#     if n_informative > n_features:
+#         raise ValueError("n_informative must be <= n_features.")
+#
+#     max_possible_clusters = 2 ** n_informative
+#     if n_clusters is None:
+#         n_clusters = max_possible_clusters
+#
+#     if n_clusters > max_possible_clusters:
+#         raise ValueError(
+#             f"n_clusters={n_clusters} cannot be greater than 2**n_informative={max_possible_clusters}."
+#         )
+#     if n_clusters < n_classes:
+#         raise ValueError(
+#             f"n_clusters={n_clusters} must be at least n_classes={n_classes}."
+#         )
+#
+#     # --- Generate centroids based on a weighted hypercube ---
+#     # 1. Start with all possible vertices of a standard hypercube
+#     all_possible_centroids = np.array(list(product([-class_sep, class_sep], repeat=n_informative)))
+#
+#     # 2. If n_clusters is less than the max possible, randomly select a subset
+#     if n_clusters < max_possible_clusters:
+#         choice_indices = generator.choice(max_possible_clusters, n_clusters, replace=False)
+#         centroids = all_possible_centroids[choice_indices]
+#     else:
+#         centroids = all_possible_centroids
+#
+#     # 3. Stretch the hypercube by multiplying each dimension by its weight
+#     weights = np.array(feature_weights)
+#     # Normalize weights to have a mean of 1 to keep overall separation consistent
+#     weights = weights / np.mean(weights)
+#     centroids *= weights
+#
+#     # --- Assign clusters to classes ---
+#     # y = np.zeros(n_samples, dtype=int)
+#     n_clusters_per_class = [n_clusters // n_classes] * n_classes
+#     for i in range(n_clusters % n_classes):
+#         n_clusters_per_class[i] += 1
+#
+#     # Assign samples to each cluster, ensuring balance
+#     n_samples_per_cluster = [n_samples // n_clusters] * n_clusters
+#     for i in range(n_samples % n_clusters):
+#         n_samples_per_cluster[i] += 1
+#
+#     cluster_labels = []
+#     for i, n_k in enumerate(n_clusters_per_class):
+#         cluster_labels.extend([i] * n_k)
+#
+#     # --- Generate samples around the centroids ---
+#     X = np.zeros((n_samples, n_features))
+#     y = np.zeros(n_samples, dtype=int)
+#
+#     C_start = 0
+#     y_start = 0
+#     for k, n_k in enumerate(n_samples_per_cluster):
+#         if n_k == 0: continue
+#
+#         C_stop = C_start + n_k
+#         # Generate points for the k-th cluster
+#         X[C_start:C_stop, :n_informative] = generator.multivariate_normal(
+#             centroids[k], np.identity(n_informative), n_k
+#         )
+#         # Assign labels for the k-th cluster
+#         y[C_start:C_stop] = cluster_labels[k]
+#         C_start = C_stop
+#
+#     # --- Add noise features ---
+#     if n_features > n_informative:
+#         X[:, n_informative:] = generator.standard_normal(
+#             (n_samples, n_features - n_informative)
+#         )
+#
+#     if shuffle:
+#         X, y = util_shuffle(X, y, random_state=generator)
+#
+#         # Also shuffle the feature columns to mix informative and noise features
+#         indices = np.arange(n_features)
+#         generator.shuffle(indices)
+#         X[:, :] = X[:, indices]
+#
+#     return X, y
 def make_classification_ranked(
         n_samples=100,
         n_features=20,
         *,
         n_informative=2,
-        n_clusters=None,
+        n_clusters=None,  # This parameter was removed as it's not standard and caused confusion
         feature_weights: List[float] = None,
         n_classes=2,
-        class_sep=1.0,
+        class_sep=2.0,  # Increased default separation for a stronger signal
         shuffle=True,
         random_state=None,
 ):
-
     """
     Generate a ranked classification dataset using a weighted hypercube method.
 
@@ -614,29 +859,11 @@ def make_classification_ranked(
     It works by generating clusters at the vertices of a hypercube, then stretching
     the hypercube along each dimension according to the provided weights. A larger
     weight makes a feature more important for class separation.
-
-    Args:
-        n_samples (int): The number of samples.
-        n_features (int): The total number of features.
-        n_informative (int): The number of informative features.
-        n_clusters (int, optional): The number of clusters per class. If None, it defaults
-            to 2**n_informative, using all vertices of the hypercube.
-        feature_weights (List[float]): A list of weights for the informative
-            features, determining their rank and contribution. Must match
-            n_informative. Defaults to descending weights.
-        n_classes (int): The number of classes.
-        class_sep (float): The factor multiplying the hypercube size, controlling
-                           the separation between clusters.
-        shuffle (bool): Whether to shuffle samples and features.
-        random_state (int): Random state for reproducibility.
-
-    Returns:
-        Tuple[np.ndarray, np.ndarray]: X (samples), y (labels).
     """
     generator = check_random_state(random_state)
 
     if feature_weights is None:
-        # Default to descending weights, e.g., 2^(n-1), 2^(n-2), ..., 1
+        # Default to descending weights
         feature_weights = [2 ** i for i in range(n_informative)][::-1]
 
     if len(feature_weights) != n_informative:
@@ -645,38 +872,24 @@ def make_classification_ranked(
     if n_informative > n_features:
         raise ValueError("n_informative must be <= n_features.")
 
-    max_possible_clusters = 2 ** n_informative
-    if n_clusters is None:
-        n_clusters = max_possible_clusters
+    # --- FIX: Use all 2**n_informative vertices ---
+    n_clusters = 2 ** n_informative
 
-    if n_clusters > max_possible_clusters:
-        raise ValueError(
-            f"n_clusters={n_clusters} cannot be greater than 2**n_informative={max_possible_clusters}."
-        )
     if n_clusters < n_classes:
         raise ValueError(
-            f"n_clusters={n_clusters} must be at least n_classes={n_classes}."
+            f"2**n_informative={n_clusters} must be at least n_classes={n_classes}."
         )
 
     # --- Generate centroids based on a weighted hypercube ---
     # 1. Start with all possible vertices of a standard hypercube
-    all_possible_centroids = np.array(list(product([-class_sep, class_sep], repeat=n_informative)))
+    centroids = np.array(list(product([-class_sep, class_sep], repeat=n_informative)))
 
-    # 2. If n_clusters is less than the max possible, randomly select a subset
-    if n_clusters < max_possible_clusters:
-        choice_indices = generator.choice(max_possible_clusters, n_clusters, replace=False)
-        centroids = all_possible_centroids[choice_indices]
-    else:
-        centroids = all_possible_centroids
-
-    # 3. Stretch the hypercube by multiplying each dimension by its weight
+    # 2. Stretch the hypercube by multiplying each dimension by its weight
     weights = np.array(feature_weights)
-    # Normalize weights to have a mean of 1 to keep overall separation consistent
-    weights = weights / np.mean(weights)
+    weights = weights / np.mean(weights)  # Normalize
     centroids *= weights
 
     # --- Assign clusters to classes ---
-    # y = np.zeros(n_samples, dtype=int)
     n_clusters_per_class = [n_clusters // n_classes] * n_classes
     for i in range(n_clusters % n_classes):
         n_clusters_per_class[i] += 1
@@ -690,12 +903,15 @@ def make_classification_ranked(
     for i, n_k in enumerate(n_clusters_per_class):
         cluster_labels.extend([i] * n_k)
 
+    # Shuffle cluster labels to randomize class assignment to vertices
+    generator.shuffle(cluster_labels)
+
     # --- Generate samples around the centroids ---
     X = np.zeros((n_samples, n_features))
     y = np.zeros(n_samples, dtype=int)
 
     C_start = 0
-    y_start = 0
+    # Iterate over all 2**n_informative clusters
     for k, n_k in enumerate(n_samples_per_cluster):
         if n_k == 0: continue
 
@@ -725,12 +941,102 @@ def make_classification_ranked(
     return X, y
 
 
+#
+# def make_blobs_ranked(
+#         n_samples=100,
+#         n_features=2,
+#         *,
+#         cluster_std=1.0,
+#         center_sep=1.0,
+#         feature_weights: List[float] = None,
+#         shuffle=True,
+#         random_state=None,
+#         return_centers=False,
+# ):
+#     """
+#     Generate isotropic Gaussian blobs around deterministically separated centers
+#     to create a robustly ranked classification problem.
+#
+#     This robust version is specialized for binary classification (2 centers). It
+#     ensures feature importance by directly scaling the center separation by the
+#     feature_weights, while keeping the data blobs themselves circular (isotropic).
+#
+#     Args:
+#         n_samples (int): The total number of points, split between the two blobs.
+#         n_features (int): The number of features for each sample.
+#         cluster_std (float): The standard deviation of the circular clusters. A smaller
+#             value makes the classification task easier.
+#         center_sep (float): A factor controlling the overall separation of the
+#             two cluster centers. A larger value makes the task easier.
+#         feature_weights (List[float], optional): A list of weights to control the
+#             importance of each feature. Must match n_features.
+#         shuffle (bool): Whether to shuffle the samples.
+#         random_state (int): Random state for reproducibility.
+#         return_centers (bool): If True, return the cluster centers.
+#
+#     Returns:
+#         Tuple: X, y, and optionally centers.
+#     """
+#     generator = check_random_state(random_state)
+#     n_centers = 2  # This version is specialized for binary classification
+#
+#     if feature_weights is None:
+#         feature_weights = [2 ** i for i in range(n_features)][::-1]
+#
+#     if len(feature_weights) != n_features:
+#         raise ValueError("Length of feature_weights must match n_features.")
+#
+#     weights = np.array(feature_weights)
+#
+#     # --- Generate robustly separated centers ---
+#     # 1. Start with two base centers at opposite ends of a hypercube diagonal.
+#     base_centers = np.array([[-center_sep] * n_features, [center_sep] * n_features])
+#
+#     # 2. Scale the center locations by the feature weights.
+#     # This is the key step: separation along each axis is now directly
+#     # proportional to the feature's weight.
+#     final_centers = base_centers * weights
+#
+#     # --- Balance samples per center ---
+#     n_samples_per_center = [n_samples // n_centers] * n_centers
+#     for i in range(n_samples % n_centers):
+#         n_samples_per_center[i] += 1
+#
+#     X = np.zeros((sum(n_samples_per_center), n_features))
+#     y = np.zeros(sum(n_samples_per_center), dtype=int)
+#
+#     # --- Generate ISOTROPIC blobs around the WEIGHTED centers ---
+#     # The separation is weighted, but the blobs themselves are circular.
+#     # This makes the contribution cleaner and less complex.
+#     for i, n in enumerate(n_samples_per_center):
+#         start_idx = sum(n_samples_per_center[:i])
+#         end_idx = start_idx + n
+#
+#         # Simple isotropic (circular) covariance matrix
+#         cov_matrix = np.identity(n_features) * (cluster_std ** 2)
+#
+#         X[start_idx:end_idx] = generator.multivariate_normal(
+#             mean=final_centers[i], cov=cov_matrix, size=n
+#         )
+#         y[start_idx:end_idx] = i
+#
+#     if shuffle:
+#         p = generator.permutation(len(X))
+#         X, y = X[p], y[p]
+#
+#     if return_centers:
+#         return X, y, final_centers
+#     else:
+#         return X, y
+
+
 def make_blobs_ranked(
         n_samples=100,
         n_features=2,
         *,
+        centers=2,
         cluster_std=1.0,
-        center_sep=1.0,
+        center_sep=4.0,  # Increased default separation for a stronger signal
         feature_weights: List[float] = None,
         shuffle=True,
         random_state=None,
@@ -739,29 +1045,9 @@ def make_blobs_ranked(
     """
     Generate isotropic Gaussian blobs around deterministically separated centers
     to create a robustly ranked classification problem.
-
-    This robust version is specialized for binary classification (2 centers). It
-    ensures feature importance by directly scaling the center separation by the
-    feature_weights, while keeping the data blobs themselves circular (isotropic).
-
-    Args:
-        n_samples (int): The total number of points, split between the two blobs.
-        n_features (int): The number of features for each sample.
-        cluster_std (float): The standard deviation of the circular clusters. A smaller
-            value makes the classification task easier.
-        center_sep (float): A factor controlling the overall separation of the
-            two cluster centers. A larger value makes the task easier.
-        feature_weights (List[float], optional): A list of weights to control the
-            importance of each feature. Must match n_features.
-        shuffle (bool): Whether to shuffle the samples.
-        random_state (int): Random state for reproducibility.
-        return_centers (bool): If True, return the cluster centers.
-
-    Returns:
-        Tuple: X, y, and optionally centers.
     """
     generator = check_random_state(random_state)
-    n_centers = 2  # This version is specialized for binary classification
+    n_centers = centers
 
     if feature_weights is None:
         feature_weights = [2 ** i for i in range(n_features)][::-1]
@@ -771,16 +1057,9 @@ def make_blobs_ranked(
 
     weights = np.array(feature_weights)
 
-    # --- Generate robustly separated centers ---
-    # 1. Start with two base centers at opposite ends of a hypercube diagonal.
     base_centers = np.array([[-center_sep] * n_features, [center_sep] * n_features])
-
-    # 2. Scale the center locations by the feature weights.
-    # This is the key step: separation along each axis is now directly
-    # proportional to the feature's weight.
     final_centers = base_centers * weights
 
-    # --- Balance samples per center ---
     n_samples_per_center = [n_samples // n_centers] * n_centers
     for i in range(n_samples % n_centers):
         n_samples_per_center[i] += 1
@@ -788,14 +1067,10 @@ def make_blobs_ranked(
     X = np.zeros((sum(n_samples_per_center), n_features))
     y = np.zeros(sum(n_samples_per_center), dtype=int)
 
-    # --- Generate ISOTROPIC blobs around the WEIGHTED centers ---
-    # The separation is weighted, but the blobs themselves are circular.
-    # This makes the contribution cleaner and less complex.
     for i, n in enumerate(n_samples_per_center):
         start_idx = sum(n_samples_per_center[:i])
         end_idx = start_idx + n
 
-        # Simple isotropic (circular) covariance matrix
         cov_matrix = np.identity(n_features) * (cluster_std ** 2)
 
         X[start_idx:end_idx] = generator.multivariate_normal(
@@ -811,6 +1086,157 @@ def make_blobs_ranked(
         return X, y, final_centers
     else:
         return X, y
+
+
+
+# --- Custom Scikit-learn Style Generators ---
+def make_moons_ranked(
+        n_samples=100,
+        *,
+        feature_weights: List[float] = None,
+        shuffle=True,
+        noise=None,
+        random_state=None
+):
+    """
+    Make two interleaving half circles with a hidden signal for ranked features.
+
+    This function implements the "hidden signal" pattern. It first generates
+    the ideal, weighted moon shapes that define the class boundary. It then
+    applies an inverse transformation to create the feature data `X` that is
+    returned. The model must learn the weights to "un-distort" the data and
+    find the simple geometric pattern.
+
+    Args:
+        n_samples (int): The total number of points generated.
+        feature_weights (List[float], optional): A list of 2 weights to control the
+            importance of each feature. Defaults to equal weights.
+        shuffle (bool): Whether to shuffle the samples.
+        noise (float, optional): Standard deviation of Gaussian noise added to the data.
+        random_state (int): Random state for reproducibility.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: X (samples), y (labels).
+    """
+    if feature_weights is None:
+        feature_weights = [1.0, 1.0]
+
+    if len(feature_weights) != 2:
+        raise ValueError("feature_weights must be a list of length 2.")
+
+    n_samples_out = n_samples // 2
+    n_samples_in = n_samples - n_samples_out
+
+    generator = check_random_state(random_state)
+
+    # 1. Generate the base geometric shapes (the "answer")
+    outer_circ_x = np.cos(np.linspace(0, np.pi, n_samples_out))
+    outer_circ_y = np.sin(np.linspace(0, np.pi, n_samples_out))
+    inner_circ_x = 1 - np.cos(np.linspace(0, np.pi, n_samples_in))
+    inner_circ_y = 1 - np.sin(np.linspace(0, np.pi, n_samples_in)) - 0.5
+
+    # This is the perfectly separable, weighted data (the hidden signal)
+    X_hidden = np.vstack(
+        [np.append(outer_circ_x, inner_circ_x), np.append(outer_circ_y, inner_circ_y)]
+    ).T
+
+    # The target `y` is based on which moon a point belongs to in this hidden space
+    y = np.hstack(
+        [np.zeros(n_samples_out, dtype=np.intp), np.ones(n_samples_in, dtype=np.intp)]
+    )
+
+    # 2. Apply weights to the hidden signal to stretch it
+    weights = np.array(feature_weights)
+    # X_hidden *= weights
+
+    # 3. Create the "puzzle": the feature data `X` to be returned.
+    # This is the distorted version that the model sees. To solve it, the model
+    # must learn to apply the weights to get back to the simple moon shape.
+    # We create it by applying the *inverse* of the weights.
+    # Adding a small epsilon to prevent division by zero if a weight is 0.
+    epsilon = 1e-8
+    inverse_weights = 1 / (weights + epsilon)
+    X = X_hidden * inverse_weights  # This is equivalent to X = X_base_shape * weights * inverse_weights = X_base_shape
+
+    # Re-apply the logic from the original function but on the base shape
+    # The returned X should be the one the model needs to learn from
+    X_base = np.vstack(
+        [np.append(outer_circ_x, inner_circ_x), np.append(outer_circ_y, inner_circ_y)]
+    ).T
+
+    # The "hidden signal" is the weighted version
+    X_hidden = X_base * weights
+
+    # The returned `X` is the unweighted version, the "puzzle"
+    X = X_base
+
+    if shuffle:
+        X, y = util_shuffle(X, y, random_state=generator)
+
+    if noise is not None:
+        # Add noise to the final features that the model will see
+        X += generator.normal(scale=noise, size=X.shape)
+
+    return X, y
+
+
+def make_parabolic_ranked(
+        n_samples=100,
+        *,
+        feature_weights: List[float] = None,
+        shuffle=True,
+        noise=None,
+        random_state=None
+):
+    """
+    Generate a dataset with a ranked, non-linear (parabolic) decision boundary.
+
+    This function implements the "hidden signal" pattern using an algebraic approach.
+    1. A uniform cloud of points (`X_base`) is generated.
+    2. A hidden decision value is calculated for each point using a weighted parabolic
+       formula: `d = (w_y * y) - (w_x * x**2)`.
+    3. The target label `y` is assigned by thresholding this hidden value at its median.
+    4. The function returns the original `X_base` and `y`, creating a puzzle where
+       the model must learn the hidden parabolic rule.
+
+    Args:
+        n_samples (int): The total number of points generated.
+        feature_weights (List[float], optional): A list of 2 weights [wx, wy] to
+            control the shape of the parabola. Defaults to [1.0, 1.0].
+        shuffle (bool): Whether to shuffle the samples.
+        noise (float, optional): Standard deviation of Gaussian noise added to the data.
+        random_state (int): Random state for reproducibility.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: X (samples), y (labels).
+    """
+    if feature_weights is None:
+        feature_weights = [1.0, 1.0]
+
+    if len(feature_weights) != 2:
+        raise ValueError("feature_weights must be a list of length 2.")
+
+    generator = check_random_state(random_state)
+
+    # Step 1: Generate a Base Point Cloud (X_base)
+    X_base = generator.uniform(low=[-1.5, -1.5], high=[1.5, 1.5], size=(n_samples, 2))
+
+    # Step 2: Create the Hidden Signal (Weighted Decision Function)
+    weights = np.array(feature_weights)
+    decision_values = (weights[1] * X_base[:, 1]) - (weights[0] * X_base[:, 0] ** 2)
+
+    # Step 3: Calculate y Labels Directly from the Hidden Signal
+    threshold = np.median(decision_values)
+    y = (decision_values > threshold).astype(int)
+
+    if shuffle:
+        X_base, y = util_shuffle(X_base, y, random_state=generator)
+
+    if noise is not None:
+        X_base += generator.normal(scale=noise, size=X_base.shape)
+
+    # Step 4: Return X_base and y
+    return X_base, y
 
 # --- Dataset Generation Functions ---
 
@@ -907,7 +1333,7 @@ def generate_ds2(size: int = 10000) -> SyntheticDataset:
     df_mod = important_features_df[['x2', 'x3']] * 1
 
     # Calculate the weighted interaction term correctly
-    interaction_series = df_mod.apply(lambda row: (5 * row['x2']) + (1 * row['x3']), axis=1)
+    interaction_series = (important_features_df['x2'] * 10) + (important_features_df['x3'] * 2)
 
     # Calculate the median of this new series
     mid_point = interaction_series.median()
@@ -937,7 +1363,7 @@ def generate_ds3(size: int = 10000) -> SyntheticDataset:
 
     df_mod = important_features_df[['x4', 'x5', 'x6']] * 20
     interaction_series = df_mod.apply(
-        lambda row: (np.power(row['x4'], 2) + (20 * row['x5']) + (10 * row['x6'])), axis=1
+        lambda row: (np.power(row['x4'], 2) + (15 * row['x5']) + (3 * row['x6'])), axis=1
     )
     mid_point = interaction_series.median()
     y_series = pd.Series(interaction_series.apply(lambda val: 1 if val >= mid_point else 0), name='y')
@@ -982,7 +1408,7 @@ def generate_ds4(size: int = 10000) -> SyntheticDataset:
             random_state=42
         ),
         important_feature_names,
-        "RGS04",
+        "RGS4",
         "Based on make_gaussian_quantiles features with a custom ranked/weighted target."
     )
 
@@ -1007,7 +1433,7 @@ def generate_ds5(size: int = 10000) -> SyntheticDataset:
             random_state=42
         ),
         important_feature_names,
-        "RGS05",
+        "RGS5",
         "Based on make_gaussian_quantiles features with a custom ranked/weighted target."
     )
 
@@ -1034,17 +1460,18 @@ def generate_ds5(size: int = 10000) -> SyntheticDataset:
 def generate_ds6(size: int = 10000) -> SyntheticDataset:
 
     important_feature_names = [f'x{i}' for i in range(14, 24)]
-    feature_weights = [250, 220, 190, 160, 130, 110, 80, 50, 35, 25]  # Example weights
+    feature_weights =  [250, 220, 190, 160, 130, 110, 80, 50, 35, 25]  # Example weights
 
     return _generate_from_sklearn(
         size,
         lambda n_samples: make_hastie_10_2_ranked(
             n_samples=n_samples,
             feature_weights=feature_weights,
+            # separation=2,
             random_state=42
         ),
         important_feature_names,
-        "RGS06",
+        "RGS6",
         "Based on make_hastie_10_2 features with a custom ranked/weighted target."
     )
 
@@ -1202,7 +1629,7 @@ def generate_ds10(size: int = 10000) -> SyntheticDataset:
    """
     important_feature_names = [f'x{i}' for i in range(37, 42)]  # x37, x38, x39, x40, x41
     # Weights to rank features as: x1 > x2 > x3 > x4 > x5
-    feature_weights = [ 80, 55, 33, 24, 15]
+    feature_weights = [ 12, 10, 8, 2, 1]
 
     return _generate_from_sklearn(
         size,
@@ -1213,8 +1640,7 @@ def generate_ds10(size: int = 10000) -> SyntheticDataset:
             feature_weights=feature_weights,
             n_classes=2,
             shuffle=False,  # Wrapper will handle shuffling if needed
-            random_state=42,
-            n_clusters=5
+            random_state=42
         ),
         important_feature_names,
         "RGS10",
@@ -1259,13 +1685,38 @@ def generate_ds11(size: int = 10000) -> SyntheticDataset:
     )
 
 
+# def generate_ds12(size: int = 10000) -> SyntheticDataset:
+#     return _generate_from_sklearn(
+#         size,
+#         lambda n_samples: make_moons(n_samples=n_samples, noise=0.0, random_state=100),
+#         ['x47', 'x48'], "RGS12",
+#         "Based on make_moons (2 informative features)."
+#     )
+
 def generate_ds12(size: int = 10000) -> SyntheticDataset:
+    """
+    DS20: Uses a custom, ranked version of make_moons to generate a dataset
+    with a clear feature hierarchy.
+    """
+    important_feature_names = ['x47', 'x48']
+    # Weights to rank features as: x47 > x48
+    feature_weights = [2, 1]
+
     return _generate_from_sklearn(
         size,
-        lambda n_samples: make_moons(n_samples=n_samples, noise=0.1, random_state=100),
-        ['x47', 'x48'], "RGS12",
-        "Based on make_moons (2 informative features)."
+        lambda n_samples: make_parabolic_ranked(
+            n_samples=n_samples,
+            feature_weights=feature_weights,
+            noise=0.0,
+            shuffle=False,
+            random_state=42
+        ),
+        important_feature_names,
+        "RGS12",
+        "Based on a custom ranked make_moons."
     )
+
+
 
 
 # --- Registry for easy access ---
