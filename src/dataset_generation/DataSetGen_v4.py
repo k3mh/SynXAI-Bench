@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 NUM_TOTAL_FEATURES = 49
 ALL_FEATURE_NAMES = [f'x{i}' for i in range(1, NUM_TOTAL_FEATURES + 1)]
 
+# Base seed for reproducible generation. Each rule uses DEFAULT_SEED + ds index
+# so noise columns are deterministic across runs but distinct across rules.
+DEFAULT_SEED = 42
+
 
 # --- Data Structure for Output ---
 class SyntheticDataset(NamedTuple):
@@ -39,7 +43,8 @@ def _generate_uncorrelated_features(
         samples: int,
         feature_names: List[str],
         correlation_threshold: float = 0.03,
-        max_retries: int = 20
+        max_retries: int = 20,
+        random_state=None
 ) -> pd.DataFrame:
     """
     Generates a DataFrame of features with inter-feature correlation below a threshold.
@@ -59,18 +64,19 @@ def _generate_uncorrelated_features(
     Returns:
         pd.DataFrame: A DataFrame of uncorrelated features, scaled to [0, 1].
     """
+    rng = check_random_state(random_state)
     if not feature_names or len(feature_names) < 2:
         if not feature_names:
             return pd.DataFrame(index=range(samples))
         # If only one feature, correlation is not applicable
-        data_array = np.random.randn(samples, len(feature_names))
+        data_array = rng.standard_normal((samples, len(feature_names)))
         df = pd.DataFrame(data_array, columns=feature_names)
         return pd.DataFrame(minmax_scale(df, axis=0, feature_range=(0, 1)),
                             columns=feature_names, dtype=float)
 
     num_features = len(feature_names)
     for attempt in range(max_retries):
-        data_array = np.random.randn(samples, num_features)
+        data_array = rng.standard_normal((samples, num_features))
         df = pd.DataFrame(data_array, columns=feature_names)
 
         # Check correlation
@@ -205,12 +211,12 @@ def _generate_from_sklearn(
         sklearn_fn: Callable,
         important_feature_names: List[str],
         rgs_name: str,
-        description: str
+        description: str,
+        random_state=None
 ) -> SyntheticDataset:
     """
     Generic helper to create datasets using sklearn.datasets functions.
     """
-    num_important = len(important_feature_names)
     noise_feature_names = [f for f in ALL_FEATURE_NAMES if f not in important_feature_names]
 
     # Generate important features and target from sklearn
@@ -224,7 +230,7 @@ def _generate_from_sklearn(
     important_features_df = pd.DataFrame(important_features_scaled, columns=important_feature_names)
 
     # Generate noise features
-    noise_features_df = _generate_uncorrelated_features(size, noise_feature_names)
+    noise_features_df = _generate_uncorrelated_features(size, noise_feature_names, random_state=random_state)
 
     final_df = _combine_and_order_features(important_features_df, noise_features_df, y_series)
 
@@ -856,10 +862,11 @@ def generate_ds0(size: int = 10000) -> SyntheticDataset:
     DS0: Unrelated variables. All features are noise.
     """
     # In this case, all features are noise features.
-    noise_features_df = _generate_uncorrelated_features(size, ALL_FEATURE_NAMES)
+    rng = check_random_state(DEFAULT_SEED)
+    noise_features_df = _generate_uncorrelated_features(size, ALL_FEATURE_NAMES, random_state=rng)
 
     # Target 'y' is generated from an independent random source to ensure no correlation.
-    y_series = pd.Series(np.random.randint(0, 2, size), name='y')
+    y_series = pd.Series(rng.randint(0, 2, size), name='y')
 
     final_df = pd.concat([noise_features_df, y_series], axis=1)
 
@@ -878,9 +885,10 @@ def generate_ds1(size: int = 10000) -> SyntheticDataset:
     important_feature_names = ['x1']
     noise_feature_names = [f for f in ALL_FEATURE_NAMES if f not in important_feature_names]
 
-    # Generate important and noise features separately
-    important_features_df = _generate_uncorrelated_features(size, important_feature_names)
-    noise_features_df = _generate_uncorrelated_features(size, noise_feature_names)
+    # Generate important and noise features separately (shared rng -> distinct, reproducible blocks)
+    rng = check_random_state(DEFAULT_SEED + 1)
+    important_features_df = _generate_uncorrelated_features(size, important_feature_names, random_state=rng)
+    noise_features_df = _generate_uncorrelated_features(size, noise_feature_names, random_state=rng)
 
     # Create target 'y' ONLY from the important feature(s)
     x1_modified = important_features_df['x1'] * 20
@@ -905,8 +913,9 @@ def generate_ds2(size: int = 10000) -> SyntheticDataset:
     important_feature_names = ['x2', 'x3']
     noise_feature_names = [f for f in ALL_FEATURE_NAMES if f not in important_feature_names]
 
-    important_features_df = _generate_uncorrelated_features(size, important_feature_names)
-    noise_features_df = _generate_uncorrelated_features(size, noise_feature_names)
+    rng = check_random_state(DEFAULT_SEED + 2)
+    important_features_df = _generate_uncorrelated_features(size, important_feature_names, random_state=rng)
+    noise_features_df = _generate_uncorrelated_features(size, noise_feature_names, random_state=rng)
 
     # Create target 'y' ONLY from the important features
     # First, apply a scaling factor to the base features (which are in [0, 1])
@@ -938,8 +947,9 @@ def generate_ds3(size: int = 10000) -> SyntheticDataset:
     important_feature_names = ['x4', 'x5', 'x6']
     noise_feature_names = [f for f in ALL_FEATURE_NAMES if f not in important_feature_names]
 
-    important_features_df = _generate_uncorrelated_features(size, important_feature_names)
-    noise_features_df = _generate_uncorrelated_features(size, noise_feature_names)
+    rng = check_random_state(DEFAULT_SEED + 3)
+    important_features_df = _generate_uncorrelated_features(size, important_feature_names, random_state=rng)
+    noise_features_df = _generate_uncorrelated_features(size, noise_feature_names, random_state=rng)
 
     df_mod = important_features_df[['x4', 'x5', 'x6']] * 20
     interaction_series = df_mod.apply(
@@ -980,7 +990,8 @@ def generate_ds4(size: int = 10000) -> SyntheticDataset:
         ),
         important_feature_names,
         "RGS4",
-        "Based on make_gaussian_quantiles features with a custom ranked/weighted target."
+        "Based on make_gaussian_quantiles features with a custom ranked/weighted target.",
+        random_state=DEFAULT_SEED + 4
     )
 
 
@@ -1005,7 +1016,8 @@ def generate_ds5(size: int = 10000) -> SyntheticDataset:
         ),
         important_feature_names,
         "RGS5",
-        "Based on make_gaussian_quantiles features with a custom ranked/weighted target."
+        "Based on make_gaussian_quantiles features with a custom ranked/weighted target.",
+        random_state=DEFAULT_SEED + 5
     )
 
 
@@ -1024,7 +1036,8 @@ def generate_ds6(size: int = 10000) -> SyntheticDataset:
         ),
         important_feature_names,
         "RGS6",
-        "Based on make_hastie_10_2 features with a custom ranked/weighted target."
+        "Based on make_hastie_10_2 features with a custom ranked/weighted target.",
+        random_state=DEFAULT_SEED + 6
     )
 
 
@@ -1055,7 +1068,8 @@ def generate_ds7(size: int = 10000) -> SyntheticDataset:
         friedman_binary_ranked,
         important_feature_names,
         "RGS7",
-        "Based on a ranked make_friedman1 (5 features); target binarized."
+        "Based on a ranked make_friedman1 (5 features); target binarized.",
+        random_state=DEFAULT_SEED + 7
     )
 
 
@@ -1098,7 +1112,8 @@ def generate_ds8(size: int = 10000) -> SyntheticDataset:
         friedman_binary_ranked,
         important_feature_names,
         "RGS8",
-        "Based on a ranked make_friedman2 (4 features); target binarized."
+        "Based on a ranked make_friedman2 (4 features); target binarized.",
+        random_state=DEFAULT_SEED + 8
     )
 
 def generate_ds9(size: int = 10000) -> SyntheticDataset:
@@ -1128,7 +1143,8 @@ def generate_ds9(size: int = 10000) -> SyntheticDataset:
         friedman_binary_ranked,
         important_feature_names,
         "RGS9",
-        "Based on a ranked make_friedman3 (4 features); target binarized."
+        "Based on a ranked make_friedman3 (4 features); target binarized.",
+        random_state=DEFAULT_SEED + 9
     )
 
 def generate_ds10(size: int = 10000) -> SyntheticDataset:
@@ -1154,7 +1170,8 @@ def generate_ds10(size: int = 10000) -> SyntheticDataset:
         ),
         important_feature_names,
         "RGS10",
-        "Based on a custom ranked make_classification."
+        "Based on a custom ranked make_classification.",
+        random_state=DEFAULT_SEED + 10
     )
 
 
@@ -1183,7 +1200,8 @@ def generate_ds11(size: int = 10000) -> SyntheticDataset:
         ),
         important_feature_names,
         "RGS11",
-        "Based on a custom ranked make_blobs (robust version)."
+        "Based on a custom ranked make_blobs (robust version).",
+        random_state=DEFAULT_SEED + 11
     )
 
 
@@ -1207,7 +1225,8 @@ def generate_ds12(size: int = 10000) -> SyntheticDataset:
         ),
         important_feature_names,
         "RGS12",
-        "Based on a custom ranked make_moons."
+        "Based on a custom ranked make_moons.",
+        random_state=DEFAULT_SEED + 12
     )
 
 
