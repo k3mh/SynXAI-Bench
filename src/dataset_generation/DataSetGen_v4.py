@@ -309,49 +309,6 @@ def make_gaussian_quantiles_ranked(
 
     return X, y
 
-#
-# def make_hastie_10_2_ranked(
-#         n_samples=12000,
-#         *,
-#         feature_weights: List[float] = None,
-#         random_state=None
-# ):
-#     """
-#     Generate data for binary classification with ranked features, based on
-#     Hastie et al. 2009, Example 10.2.
-#
-#     The ten features are standard independent Gaussian and the target ``y`` is
-#     defined by a weighted sum of squares:
-#     y[i] = 1 if np.sum(weights * (X[i] ** 2)) > 9.34 else -1
-#
-#     Args:
-#         n_samples (int, optional): The number of samples. Defaults to 12000.
-#         feature_weights (List[float], optional): A list of 10 weights to control the
-#             importance of each feature. Defaults to equal weights of 1.0.
-#         random_state (int, optional): Random state for reproducibility. Defaults to None.
-#
-#     Returns:
-#         Tuple[np.ndarray, np.ndarray]: X (samples), y (labels).
-#     """
-#     rs = check_random_state(random_state)
-#
-#     if feature_weights is None:
-#         feature_weights = np.ones(10)
-#
-#     if len(feature_weights) != 10:
-#         raise ValueError("feature_weights must be a list or array of length 10.")
-#
-#     shape = (n_samples, 10)
-#     X = rs.normal(size=shape).reshape(shape)
-#
-#     # Calculate the weighted sum of squares
-#     weighted_sum_of_squares = ((X ** 2.0) * feature_weights).sum(axis=1)
-#
-#     threshold = np.median(weighted_sum_of_squares)
-#
-#     y = (weighted_sum_of_squares > threshold).astype(np.float64, copy=False)
-#
-#     return X, y
 def make_hastie_10_2_ranked(
         n_samples=12000,
         *,
@@ -407,79 +364,6 @@ def make_friedman1_ranked(
 ):
     """
     Generate a modified "Friedman #1" regression problem with 5 ranked features.
-    """
-    if n_features < 5:
-        raise ValueError("n_features must be at least 5.")
-
-    generator = check_random_state(random_state)
-
-    if feature_weights is None:
-        feature_weights = [20.0, 16.0, 12.0, 8.0, 4.0]
-
-    if len(feature_weights) != 5:
-        raise ValueError("feature_weights must be a list or array of length 5.")
-
-    X = generator.uniform(size=(n_samples, n_features))
-
-    y = (
-            feature_weights[0] * np.sin(np.pi * X[:, 0])
-            + feature_weights[1] * np.sin(np.pi * X[:, 1])
-            + feature_weights[2] * (X[:, 2] - 0.5) ** 2
-            + feature_weights[3] * X[:, 3]
-            + feature_weights[4] * X[:, 4]
-            + noise * generator.standard_normal(size=(n_samples))
-    )
-
-    return X, y
-
-
-def make_friedman2_ranked(
-        n_samples=100,
-        *,
-        feature_weights: List[float] = None,
-        noise=0.0,
-        random_state=None
-):
-    """
-    Generate the "Friedman #2" regression problem with ranked features.
-    """
-    generator = check_random_state(random_state)
-
-    if feature_weights is None:
-        feature_weights = [40.0, 15.0, 7.0, 2.0]
-
-    if len(feature_weights) != 4:
-        raise ValueError("feature_weights must be a list or array of length 4.")
-
-    X = generator.uniform(size=(n_samples, 4))
-    X[:, 0] *= 100
-    X[:, 1] *= 520 * np.pi
-    X[:, 1] += 40 * np.pi
-    X[:, 3] *= 10
-    X[:, 3] += 1
-
-    X_scaled = minmax_scale(X, axis=0)
-
-    X_w = X_scaled * feature_weights
-
-    epsilon = 1e-6
-    y = (
-                X_w[:, 0] ** 2
-                + (X_w[:, 1] * X_w[:, 2] - 1 / (X_w[:, 1] * X_w[:, 3] + epsilon)) ** 2
-        ) ** 0.5 + noise * generator.standard_normal(size=(n_samples))
-
-    return X, y
-
-def make_friedman1_ranked(
-        n_samples=100,
-        n_features=10,
-        *,
-        feature_weights: List[float] = None,
-        noise=0.0,
-        random_state=None
-):
-    """
-    Generate a modified "Friedman #1" regression problem with 5 ranked features.
 
     The output `y` is created according to a weighted version of the original formula,
     where the interactive term is split to allow individual ranking:
@@ -523,60 +407,6 @@ def make_friedman1_ranked(
 
     return X, y
 
-
-# def make_friedman2_ranked_(
-#         n_samples=100,
-#         *,
-#         feature_weights: List[float] = None,
-#         noise=0.0,
-#         random_state=None
-# ):
-#     """
-#     Generate the "Friedman #2" regression problem with ranked features.
-#
-#     The output `y` is created by first scaling the features by the provided
-#     weights, and then applying the original formula:
-#     y(X) = ( (X'₀)² + (X'₁*X'₂ - 1/(X'₁*X'₃))² )⁰.⁵ + noise
-#     where X'ᵢ = wᵢ * Xᵢ
-#
-#     Args:
-#         n_samples (int, optional): The number of samples. Defaults to 100.
-#         feature_weights (List[float], optional): A list of 4 weights to control the
-#             importance of each feature. Defaults to weights that rank features
-#             x1 > x2 > x3 > x4.
-#         noise (float, optional): Std of Gaussian noise applied to output. Defaults to 0.0.
-#         random_state (int, optional): Random state for reproducibility. Defaults to None.
-#
-#     Returns:
-#         Tuple[np.ndarray, np.ndarray]: X (samples), y (labels).
-#     """
-#     generator = check_random_state(random_state)
-#
-#     if feature_weights is None:
-#         # Default weights to rank features as: X0 > X1 > X2 > X3
-#         feature_weights = [10.0, 5.0, 2.0, 1.0]
-#
-#     if len(feature_weights) != 4:
-#         raise ValueError("feature_weights must be a list or array of length 4.")
-#
-#     # Generate features in their original ranges
-#     X = generator.uniform(size=(n_samples, 4))
-#     # X[:, 0] *= 100
-#     # X[:, 1] *= 520 * np.pi
-#     # X[:, 1] += 40 * np.pi
-#     # X[:, 3] *= 10
-#     # X[:, 3] += 1
-#
-#     # Create a weighted version of the features before they enter the formula
-#     X_w = X * feature_weights
-#
-#     # Use the original formula structure with the weighted features
-#     y = (
-#                 X_w[:, 0] ** 2
-#                 + (X_w[:, 1] * X_w[:, 2] - 1 / (X_w[:, 1] * X_w[:, 3])) ** 2
-#         ) ** 0.5 #+ noise * generator.standard_normal(size=(n_samples))
-#
-#     return X, y
 
 def make_friedman2_ranked(
         n_samples=100,
@@ -709,136 +539,6 @@ def make_friedman3_ranked(
     # 5. Return the original, unscaled features
     return X, y
 
-# def make_classification_ranked(
-#         n_samples=100,
-#         n_features=20,
-#         *,
-#         n_informative=2,
-#         n_clusters=None,
-#         feature_weights: List[float] = None,
-#         n_classes=2,
-#         class_sep=1.0,
-#         shuffle=True,
-#         random_state=None,
-# ):
-#
-#     """
-#     Generate a ranked classification dataset using a weighted hypercube method.
-#
-#     This function modifies the logic of sklearn's make_classification to allow for
-#     direct control over the importance of informative features via `feature_weights`.
-#     It works by generating clusters at the vertices of a hypercube, then stretching
-#     the hypercube along each dimension according to the provided weights. A larger
-#     weight makes a feature more important for class separation.
-#
-#     Args:
-#         n_samples (int): The number of samples.
-#         n_features (int): The total number of features.
-#         n_informative (int): The number of informative features.
-#         n_clusters (int, optional): The number of clusters per class. If None, it defaults
-#             to 2**n_informative, using all vertices of the hypercube.
-#         feature_weights (List[float]): A list of weights for the informative
-#             features, determining their rank and contribution. Must match
-#             n_informative. Defaults to descending weights.
-#         n_classes (int): The number of classes.
-#         class_sep (float): The factor multiplying the hypercube size, controlling
-#                            the separation between clusters.
-#         shuffle (bool): Whether to shuffle samples and features.
-#         random_state (int): Random state for reproducibility.
-#
-#     Returns:
-#         Tuple[np.ndarray, np.ndarray]: X (samples), y (labels).
-#     """
-#     generator = check_random_state(random_state)
-#
-#     if feature_weights is None:
-#         # Default to descending weights, e.g., 2^(n-1), 2^(n-2), ..., 1
-#         feature_weights = [2 ** i for i in range(n_informative)][::-1]
-#
-#     if len(feature_weights) != n_informative:
-#         raise ValueError("Length of feature_weights must match n_informative.")
-#
-#     if n_informative > n_features:
-#         raise ValueError("n_informative must be <= n_features.")
-#
-#     max_possible_clusters = 2 ** n_informative
-#     if n_clusters is None:
-#         n_clusters = max_possible_clusters
-#
-#     if n_clusters > max_possible_clusters:
-#         raise ValueError(
-#             f"n_clusters={n_clusters} cannot be greater than 2**n_informative={max_possible_clusters}."
-#         )
-#     if n_clusters < n_classes:
-#         raise ValueError(
-#             f"n_clusters={n_clusters} must be at least n_classes={n_classes}."
-#         )
-#
-#     # --- Generate centroids based on a weighted hypercube ---
-#     # 1. Start with all possible vertices of a standard hypercube
-#     all_possible_centroids = np.array(list(product([-class_sep, class_sep], repeat=n_informative)))
-#
-#     # 2. If n_clusters is less than the max possible, randomly select a subset
-#     if n_clusters < max_possible_clusters:
-#         choice_indices = generator.choice(max_possible_clusters, n_clusters, replace=False)
-#         centroids = all_possible_centroids[choice_indices]
-#     else:
-#         centroids = all_possible_centroids
-#
-#     # 3. Stretch the hypercube by multiplying each dimension by its weight
-#     weights = np.array(feature_weights)
-#     # Normalize weights to have a mean of 1 to keep overall separation consistent
-#     weights = weights / np.mean(weights)
-#     centroids *= weights
-#
-#     # --- Assign clusters to classes ---
-#     # y = np.zeros(n_samples, dtype=int)
-#     n_clusters_per_class = [n_clusters // n_classes] * n_classes
-#     for i in range(n_clusters % n_classes):
-#         n_clusters_per_class[i] += 1
-#
-#     # Assign samples to each cluster, ensuring balance
-#     n_samples_per_cluster = [n_samples // n_clusters] * n_clusters
-#     for i in range(n_samples % n_clusters):
-#         n_samples_per_cluster[i] += 1
-#
-#     cluster_labels = []
-#     for i, n_k in enumerate(n_clusters_per_class):
-#         cluster_labels.extend([i] * n_k)
-#
-#     # --- Generate samples around the centroids ---
-#     X = np.zeros((n_samples, n_features))
-#     y = np.zeros(n_samples, dtype=int)
-#
-#     C_start = 0
-#     y_start = 0
-#     for k, n_k in enumerate(n_samples_per_cluster):
-#         if n_k == 0: continue
-#
-#         C_stop = C_start + n_k
-#         # Generate points for the k-th cluster
-#         X[C_start:C_stop, :n_informative] = generator.multivariate_normal(
-#             centroids[k], np.identity(n_informative), n_k
-#         )
-#         # Assign labels for the k-th cluster
-#         y[C_start:C_stop] = cluster_labels[k]
-#         C_start = C_stop
-#
-#     # --- Add noise features ---
-#     if n_features > n_informative:
-#         X[:, n_informative:] = generator.standard_normal(
-#             (n_samples, n_features - n_informative)
-#         )
-#
-#     if shuffle:
-#         X, y = util_shuffle(X, y, random_state=generator)
-#
-#         # Also shuffle the feature columns to mix informative and noise features
-#         indices = np.arange(n_features)
-#         generator.shuffle(indices)
-#         X[:, :] = X[:, indices]
-#
-#     return X, y
 def make_classification_ranked(
         n_samples=100,
         n_features=20,
@@ -939,95 +639,6 @@ def make_classification_ranked(
         X[:, :] = X[:, indices]
 
     return X, y
-
-
-#
-# def make_blobs_ranked(
-#         n_samples=100,
-#         n_features=2,
-#         *,
-#         cluster_std=1.0,
-#         center_sep=1.0,
-#         feature_weights: List[float] = None,
-#         shuffle=True,
-#         random_state=None,
-#         return_centers=False,
-# ):
-#     """
-#     Generate isotropic Gaussian blobs around deterministically separated centers
-#     to create a robustly ranked classification problem.
-#
-#     This robust version is specialized for binary classification (2 centers). It
-#     ensures feature importance by directly scaling the center separation by the
-#     feature_weights, while keeping the data blobs themselves circular (isotropic).
-#
-#     Args:
-#         n_samples (int): The total number of points, split between the two blobs.
-#         n_features (int): The number of features for each sample.
-#         cluster_std (float): The standard deviation of the circular clusters. A smaller
-#             value makes the classification task easier.
-#         center_sep (float): A factor controlling the overall separation of the
-#             two cluster centers. A larger value makes the task easier.
-#         feature_weights (List[float], optional): A list of weights to control the
-#             importance of each feature. Must match n_features.
-#         shuffle (bool): Whether to shuffle the samples.
-#         random_state (int): Random state for reproducibility.
-#         return_centers (bool): If True, return the cluster centers.
-#
-#     Returns:
-#         Tuple: X, y, and optionally centers.
-#     """
-#     generator = check_random_state(random_state)
-#     n_centers = 2  # This version is specialized for binary classification
-#
-#     if feature_weights is None:
-#         feature_weights = [2 ** i for i in range(n_features)][::-1]
-#
-#     if len(feature_weights) != n_features:
-#         raise ValueError("Length of feature_weights must match n_features.")
-#
-#     weights = np.array(feature_weights)
-#
-#     # --- Generate robustly separated centers ---
-#     # 1. Start with two base centers at opposite ends of a hypercube diagonal.
-#     base_centers = np.array([[-center_sep] * n_features, [center_sep] * n_features])
-#
-#     # 2. Scale the center locations by the feature weights.
-#     # This is the key step: separation along each axis is now directly
-#     # proportional to the feature's weight.
-#     final_centers = base_centers * weights
-#
-#     # --- Balance samples per center ---
-#     n_samples_per_center = [n_samples // n_centers] * n_centers
-#     for i in range(n_samples % n_centers):
-#         n_samples_per_center[i] += 1
-#
-#     X = np.zeros((sum(n_samples_per_center), n_features))
-#     y = np.zeros(sum(n_samples_per_center), dtype=int)
-#
-#     # --- Generate ISOTROPIC blobs around the WEIGHTED centers ---
-#     # The separation is weighted, but the blobs themselves are circular.
-#     # This makes the contribution cleaner and less complex.
-#     for i, n in enumerate(n_samples_per_center):
-#         start_idx = sum(n_samples_per_center[:i])
-#         end_idx = start_idx + n
-#
-#         # Simple isotropic (circular) covariance matrix
-#         cov_matrix = np.identity(n_features) * (cluster_std ** 2)
-#
-#         X[start_idx:end_idx] = generator.multivariate_normal(
-#             mean=final_centers[i], cov=cov_matrix, size=n
-#         )
-#         y[start_idx:end_idx] = i
-#
-#     if shuffle:
-#         p = generator.permutation(len(X))
-#         X, y = X[p], y[p]
-#
-#     if return_centers:
-#         return X, y, final_centers
-#     else:
-#         return X, y
 
 
 def make_blobs_ranked(
@@ -1287,37 +898,6 @@ def generate_ds1(size: int = 10000) -> SyntheticDataset:
     )
 
 
-# def generate_ds2(size: int = 10000) -> SyntheticDataset:
-#     """
-#     DS2: Target 'y' from sum of 'x2' and 'x3'.
-#     """
-#     important_feature_names = ['x2', 'x3']
-#     noise_feature_names = [f for f in ALL_FEATURE_NAMES if f not in important_feature_names]
-#
-#     important_features_df = _generate_uncorrelated_features(size, important_feature_names)
-#     noise_features_df = _generate_uncorrelated_features(size, noise_feature_names)
-#     logger.info(important_features_df.describe())
-#     # Create target 'y' ONLY from the important features
-#     df_mod = important_features_df[['x2', 'x3']] * 20
-#     logger.info(df_mod.describe())
-#
-#     df_mod = df_mod.apply( lambda row: (5 * row['x2']) + (1 * row['x3']), axis = 1)
-#     df_mod = df_mod.apply( lambda row: (5 * row['x2']) + (1 * row['x3']), axis=1)
-#
-#
-#     mid_point = ( df_mod['x2']  + df_mod['x3']).median()
-#     y_series = pd.Series(( df_mod['x2']  +  df_mod['x3']).apply(lambda s: 1 if s >= mid_point else 0), name='y')
-#
-#     final_df = _combine_and_order_features(important_features_df, noise_features_df, y_series)
-#
-#     meta_data = pd.DataFrame({"imp_vars": [important_feature_names] * size, "RGS": ["RGS2"] * size})
-#     return SyntheticDataset(
-#         data=final_df, meta_data=meta_data, feature_names=ALL_FEATURE_NAMES,
-#         name="DS2_Correlated_x2_x3_sum",
-#         description="Target 'y' is derived from the sum of 5x2 and x3."
-#     )
-#
-
 def generate_ds2(size: int = 10000) -> SyntheticDataset:
     """
     DS2: Target 'y' from a weighted sum of 'x2' and 'x3'.
@@ -1379,15 +959,6 @@ def generate_ds3(size: int = 10000) -> SyntheticDataset:
 
 
 
-# def generate_ds4(size: int = 10000) -> SyntheticDataset:
-#     return _generate_from_sklearn(
-#         size,
-#         lambda n_samples: make_gaussian_quantiles(n_features=2, n_classes=2, n_samples=n_samples, random_state=42),
-#         ['x7', 'x8'],
-#         "RGS4",
-#         "Based on make_gaussian_quantiles; x7, x8 are informative."
-#     )
-
 def generate_ds4(size: int = 10000) -> SyntheticDataset:
     """
     DS14: Uses features from make_gaussian_quantiles but with a custom weighted
@@ -1438,25 +1009,6 @@ def generate_ds5(size: int = 10000) -> SyntheticDataset:
     )
 
 
-# def generate_ds5(size: int = 10000) -> SyntheticDataset:
-#     return _generate_from_sklearn(
-#         size,
-#         lambda n_samples: make_gaussian_quantiles(n_features=5, n_classes=2, n_samples=n_samples, random_state=42),
-#         ['x9', 'x10', 'x11', 'x12', 'x13'],
-#         "RGS5",
-#         "Based on make_gaussian_quantiles; x9-x13 are informative."
-#     )
-
-
-# def generate_ds6(size: int = 10000) -> SyntheticDataset:
-#     return _generate_from_sklearn(
-#         size,
-#         lambda n_samples: make_hastie_10_2(n_samples=n_samples, random_state=42),
-#         [f'x{i}' for i in range(14, 24)],
-#         "RGS6",
-#         "Based on make_hastie_10_2; x14-x23 are informative."
-#     )
-
 def generate_ds6(size: int = 10000) -> SyntheticDataset:
 
     important_feature_names = [f'x{i}' for i in range(14, 24)]
@@ -1476,17 +1028,6 @@ def generate_ds6(size: int = 10000) -> SyntheticDataset:
     )
 
 
-
-# def generate_ds7(size: int = 10000) -> SyntheticDataset:
-#     def friedman_binary(n_samples):
-#         X, y_reg = make_friedman1(n_features=5, n_samples=n_samples, random_state=42)
-#         y_bin = np.where(y_reg > np.median(y_reg), 1, 0)
-#         return X, y_bin
-#
-#     return _generate_from_sklearn(
-#         size, friedman_binary, [f'x{i}' for i in range(24, 29)], "RGS7",
-#         "Based on make_friedman1 (5 features); target binarized."
-#     )
 
 def generate_ds7(size: int = 10000) -> SyntheticDataset:
     """
@@ -1517,17 +1058,6 @@ def generate_ds7(size: int = 10000) -> SyntheticDataset:
         "Based on a ranked make_friedman1 (5 features); target binarized."
     )
 
-
-# def generate_ds8(size: int = 10000) -> SyntheticDataset:
-#     def friedman_binary(n_samples):
-#         X, y_reg = make_friedman2(n_samples=n_samples, random_state=42)
-#         y_bin = np.where(y_reg > np.median(y_reg), 1, 0)
-#         return X, y_bin
-#
-#     return _generate_from_sklearn(
-#         size, friedman_binary, [f'x{i}' for i in range(29, 33)], "RGS8",
-#         "Based on make_friedman2 (4 features); target binarized."
-#     )
 
 def generate_ds8(size: int = 10000) -> SyntheticDataset:
     """
@@ -1571,17 +1101,6 @@ def generate_ds8(size: int = 10000) -> SyntheticDataset:
         "Based on a ranked make_friedman2 (4 features); target binarized."
     )
 
-# def generate_ds9(size: int = 10000) -> SyntheticDataset:
-#     def friedman_binary(n_samples):
-#         X, y_reg = make_friedman3(n_samples=n_samples, random_state=42)
-#         y_bin = np.where(y_reg > np.median(y_reg), 1, 0)
-#         return X, y_bin
-#
-#     return _generate_from_sklearn(
-#         size, friedman_binary, [f'x{i}' for i in range(33, 37)], "RGS9",
-#         "Based on make_friedman3 (4 features); target binarized."
-#     )
-
 def generate_ds9(size: int = 10000) -> SyntheticDataset:
     """
     DS9: Uses features from a ranked version of make_friedman3, which are then
@@ -1612,15 +1131,6 @@ def generate_ds9(size: int = 10000) -> SyntheticDataset:
         "Based on a ranked make_friedman3 (4 features); target binarized."
     )
 
-# def generate_ds10(size: int = 10000) -> SyntheticDataset:
-#     return _generate_from_sklearn(
-#         size,
-#         lambda n_samples: make_classification(n_samples=n_samples, n_features=4, n_informative=4, n_redundant=0,
-#                                               n_repeated=0, class_sep=2.0, random_state=100),
-#         [f'x{i}' for i in range(37, 41)], "RGS10",
-#         "Based on make_classification (4 informative features)."
-#     )
-
 def generate_ds10(size: int = 10000) -> SyntheticDataset:
 
     """
@@ -1647,14 +1157,6 @@ def generate_ds10(size: int = 10000) -> SyntheticDataset:
         "Based on a custom ranked make_classification."
     )
 
-
-# def generate_ds11(size: int = 10000) -> SyntheticDataset:
-#     return _generate_from_sklearn(
-#         size,
-#         lambda n_samples: make_blobs(n_samples=n_samples, n_features=6, centers=2, cluster_std=8.0, random_state=100),
-#         [f'x{i}' for i in range(41, 47)], "RGS11",
-#         "Based on make_blobs (6 informative features)."
-#     )
 
 def generate_ds11(size: int = 10000) -> SyntheticDataset:
     """
@@ -1684,14 +1186,6 @@ def generate_ds11(size: int = 10000) -> SyntheticDataset:
         "Based on a custom ranked make_blobs (robust version)."
     )
 
-
-# def generate_ds12(size: int = 10000) -> SyntheticDataset:
-#     return _generate_from_sklearn(
-#         size,
-#         lambda n_samples: make_moons(n_samples=n_samples, noise=0.0, random_state=100),
-#         ['x47', 'x48'], "RGS12",
-#         "Based on make_moons (2 informative features)."
-#     )
 
 def generate_ds12(size: int = 10000) -> SyntheticDataset:
     """
