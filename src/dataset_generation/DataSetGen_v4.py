@@ -20,7 +20,7 @@ import numbers
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-NUM_TOTAL_FEATURES = 48
+NUM_TOTAL_FEATURES = 49
 ALL_FEATURE_NAMES = [f'x{i}' for i in range(1, NUM_TOTAL_FEATURES + 1)]
 
 
