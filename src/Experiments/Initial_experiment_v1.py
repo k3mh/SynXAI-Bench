@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import pandas as pd
 import shap
@@ -116,6 +117,10 @@ def evaluate_xai_faithfulness(dataset_id, X, y, gt_metadata, model):
 
     results = []
 
+    # Initialize timing tracking
+    shap_times = []
+    lime_times = []
+
     # Evaluate selected instances
     for original_idx in selected_indices:
         # Find the position in the metadata
@@ -133,13 +138,21 @@ def evaluate_xai_faithfulness(dataset_id, X, y, gt_metadata, model):
         else:
             true_gt = gt_metadata[position_in_metadata]
 
-        # SHAP Attribution
+        # SHAP Attribution with timing
+        shap_start_time = time.time()
         shap_values = shap_explainer.shap_values(instance)
+        shap_end_time = time.time()
+        shap_times.append(shap_end_time - shap_start_time)
+
         # Handle binary classification output (usually index 1)
         shap_attr = np.abs(shap_values[1] if isinstance(shap_values, list) else shap_values)
 
-        # LIME Attribution
+        # LIME Attribution with timing
+        lime_start_time = time.time()
         exp = lime_explainer.explain_instance(instance.values, model.predict_proba, num_features=len(X.columns))
+        lime_end_time = time.time()
+        lime_times.append(lime_end_time - lime_start_time)
+
         lime_attr = np.zeros(len(X.columns))
         for feature_idx, val in exp.as_map()[1]:
             lime_attr[feature_idx] = np.abs(val)
@@ -171,26 +184,37 @@ def evaluate_xai_faithfulness(dataset_id, X, y, gt_metadata, model):
     shap_ci_lower, shap_ci_upper, shap_margin = calculate_confidence_interval(shap_scores)
     lime_ci_lower, lime_ci_upper, lime_margin = calculate_confidence_interval(lime_scores)
 
+    # Calculate timing statistics
+    shap_time_mean = np.mean(shap_times)
+    shap_time_total = np.sum(shap_times)
+    lime_time_mean = np.mean(lime_times)
+    lime_time_total = np.sum(lime_times)
+
     statistics = {
         'SHAP_GTF_mean': np.mean(shap_scores),
         'SHAP_GTF_std': np.std(shap_scores, ddof=1),  # Sample standard deviation
         'SHAP_GTF_ci_lower': shap_ci_lower,
         'SHAP_GTF_ci_upper': shap_ci_upper,
         'SHAP_GTF_ci_margin': shap_margin,
+        'SHAP_time_mean': shap_time_mean,
+        'SHAP_time_total': shap_time_total,
         'LIME_GTF_mean': np.mean(lime_scores),
         'LIME_GTF_std': np.std(lime_scores, ddof=1),
         'LIME_GTF_ci_lower': lime_ci_lower,
         'LIME_GTF_ci_upper': lime_ci_upper,
         'LIME_GTF_ci_margin': lime_margin,
+        'LIME_time_mean': lime_time_mean,
+        'LIME_time_total': lime_time_total,
     }
 
     print(
         f"  SHAP: {statistics['SHAP_GTF_mean']:.4f} ± {shap_margin:.4f} (95% CI: [{shap_ci_lower:.4f}, {shap_ci_upper:.4f}])")
     print(
         f"  LIME: {statistics['LIME_GTF_mean']:.4f} ± {lime_margin:.4f} (95% CI: [{lime_ci_lower:.4f}, {lime_ci_upper:.4f}])")
+    print(f"  SHAP timing: {shap_time_mean:.4f}s mean, {shap_time_total:.2f}s total")
+    print(f"  LIME timing: {lime_time_mean:.4f}s mean, {lime_time_total:.2f}s total")
 
     return statistics, num_instances_evaluated, results_df
-
 
 def load_model(model_path):
     """

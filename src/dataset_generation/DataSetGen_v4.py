@@ -1662,7 +1662,7 @@ def generate_ds11(size: int = 10000) -> SyntheticDataset:
     with a clear feature hierarchy. This is the robust version.
     """
     # Using 6 features to match the original generate_ds11
-    important_feature_names = [f'x{i}' for i in range(41, 47)]
+    important_feature_names = [f'x{i}' for i in range(42, 48)]
     # Weights to rank features as: x41 > x42 > ... > x46
     feature_weights = [32, 20, 16, 10, 7, 5]
     # feature_weights = [ , 8, 4, 3, 2, 0.1]
@@ -1698,7 +1698,7 @@ def generate_ds12(size: int = 10000) -> SyntheticDataset:
     DS20: Uses a custom, ranked version of make_moons to generate a dataset
     with a clear feature hierarchy.
     """
-    important_feature_names = ['x47', 'x48']
+    important_feature_names = ['x48', 'x49']
     # Weights to rank features as: x47 > x48
     feature_weights = [2, 1]
 
