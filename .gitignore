@@ -1,0 +1,9 @@
+# Local planning / discussion / blueprint notes (never pushed)
+project_notes/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# IDE
+.idea/
