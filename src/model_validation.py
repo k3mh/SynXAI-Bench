@@ -4,6 +4,7 @@ import logging
 from typing import List, Dict, Any, Tuple
 from scipy.stats import kendalltau
 from sklearn.metrics import roc_auc_score, accuracy_score
+from sklearn.utils import check_random_state
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -86,7 +87,9 @@ def validate_model_additive_impact(
         X_test: pd.DataFrame,
         y_test: pd.Series,
         meta_test: pd.DataFrame,
-        metric: str = 'auc'
+        metric: str = 'auc',
+        n_shuffles: int = 1,
+        random_state=None
 ) -> pd.DataFrame:
     """
     Validates a model by measuring the additive impact on performance (AUC or Accuracy)
@@ -106,6 +109,11 @@ def validate_model_additive_impact(
         y_test (pd.Series): The corresponding true labels for the test data.
         meta_test (pd.DataFrame): The metadata for the test data, with 'imp_vars' and 'RGS'.
         metric (str): The performance metric to use for validation ('auc' or 'accuracy').
+        n_shuffles (int): Number of neutralization shuffles to average each feature's gain
+                          over. Default 1 reproduces the original single-shuffle behaviour;
+                          higher values reduce the variance that can transpose close-importance
+                          features.
+        random_state: Seed/RandomState for the neutralization shuffles (reproducibility).
 
     Returns:
         pd.DataFrame: A DataFrame where each row represents the impact of adding back one
@@ -118,7 +126,9 @@ def validate_model_additive_impact(
         y_test=y_test,
         meta_test=meta_test,
         metric=metric,
-        filter_correct_predictions=False
+        filter_correct_predictions=False,
+        n_shuffles=n_shuffles,
+        random_state=random_state
     )
 
 
@@ -127,7 +137,9 @@ def validate_model_additive_impact_on_correct_samples(
         X_test: pd.DataFrame,
         y_test: pd.Series,
         meta_test: pd.DataFrame,
-        metric: str = 'auc'
+        metric: str = 'auc',
+        n_shuffles: int = 1,
+        random_state=None
 ) -> pd.DataFrame:
     """
     Validates a model by measuring the additive impact on performance, but ONLY
@@ -155,7 +167,9 @@ def validate_model_additive_impact_on_correct_samples(
         y_test=y_test,
         meta_test=meta_test,
         metric=metric,
-        filter_correct_predictions=True
+        filter_correct_predictions=True,
+        n_shuffles=n_shuffles,
+        random_state=random_state
     )
 
 
@@ -165,12 +179,20 @@ def _perform_additive_impact_validation(
         y_test: pd.Series,
         meta_test: pd.DataFrame,
         metric: str,
-        filter_correct_predictions: bool
+        filter_correct_predictions: bool,
+        n_shuffles: int = 1,
+        random_state=None
 ) -> pd.DataFrame:
     """
     Internal core function to perform additive impact validation.
     It can operate on either all test samples or only correctly predicted ones.
     This version uses a full local neutralization to ensure a true baseline.
+
+    A single neutralization shuffle yields a high-variance gain estimate, which can
+    transpose features of close designed importance. Setting ``n_shuffles`` > 1 repeats
+    the neutralize-and-restore pass with independent shuffles and averages each feature's
+    gain, stabilising the ranking. ``n_shuffles=1`` with ``random_state=None`` reproduces
+    the original behaviour.
     """
     if not (X_test.index.equals(meta_test.index) and X_test.index.equals(y_test.index)):
         logger.error("X_test, y_test, and meta_test must have identical indices for alignment.")
@@ -178,6 +200,8 @@ def _perform_additive_impact_validation(
     if metric not in ['auc', 'accuracy']:
         raise ValueError("Metric must be either 'auc' or 'accuracy'.")
 
+    rng = check_random_state(random_state)
+    n_shuffles = max(1, int(n_shuffles))
     validation_results = []
 
     # --- Optional Initial Filtering Step ---
@@ -224,44 +248,58 @@ def _perform_additive_impact_validation(
             logger.error(f"Could not calculate original score for RGS group '{rgs_group}': {e}")
             original_group_score = np.nan
 
-        # --- 2. Full Local Neutralization: Shuffle ALL features within the group ---
-        fully_neutralized_X_group = X_test_group.copy()
-        for feature in fully_neutralized_X_group.columns:
-            fully_neutralized_X_group[feature] = np.random.permutation(X_test_group[feature].values)
+        # --- 2-3. Average additive gains over n_shuffles neutralizations ---
+        # Each shuffle: neutralize ALL features, then restore the rule's features
+        # least -> most important, recording the per-feature gain. Averaging across
+        # shuffles cuts the single-shuffle variance that can transpose close features.
+        gain_acc = {f: [] for f in rgs_important_features}
+        before_acc = {f: [] for f in rgs_important_features}
+        after_acc = {f: [] for f in rgs_important_features}
 
-        # --- 3. Calculate True Baseline Score on fully shuffled data ---
-        try:
-            if metric == 'auc':
-                neutralized_probas = ml_model.predict_proba(fully_neutralized_X_group.values)[:, 1]
-                previous_score = roc_auc_score(y_test_group, neutralized_probas)
-            else:  # accuracy
-                neutralized_preds = ml_model.predict(fully_neutralized_X_group.values)
-                previous_score = accuracy_score(y_test_group, neutralized_preds)
-        except Exception as e:
-            logger.error(f"Could not calculate initial score for RGS '{rgs_group}' on locally neutralized data: {e}")
-            continue
-
-        current_counterfactual_X_group = fully_neutralized_X_group.copy()
-        active_features_at_step = []
-        # Iterate from least to most important feature
-        for feature_to_add_back in reversed(rgs_important_features):
-            current_counterfactual_X_group[feature_to_add_back] = X_test_group[feature_to_add_back]
-            active_features_at_step.append(feature_to_add_back)
+        for _ in range(n_shuffles):
+            fully_neutralized_X_group = X_test_group.copy()
+            for feature in fully_neutralized_X_group.columns:
+                fully_neutralized_X_group[feature] = rng.permutation(X_test_group[feature].values)
 
             try:
                 if metric == 'auc':
-                    new_probas = ml_model.predict_proba(current_counterfactual_X_group.values)[:, 1]
-                    new_score = roc_auc_score(y_test_group, new_probas)
+                    neutralized_probas = ml_model.predict_proba(fully_neutralized_X_group.values)[:, 1]
+                    previous_score = roc_auc_score(y_test_group, neutralized_probas)
                 else:  # accuracy
-                    new_preds = ml_model.predict(current_counterfactual_X_group.values)
-                    new_score = accuracy_score(y_test_group, new_preds)
+                    neutralized_preds = ml_model.predict(fully_neutralized_X_group.values)
+                    previous_score = accuracy_score(y_test_group, neutralized_preds)
             except Exception as e:
-                logger.error(
-                    f"Model prediction/scoring failed for additive step of RGS '{rgs_group}' (feature {feature_to_add_back}): {e}")
+                logger.error(f"Could not calculate initial score for RGS '{rgs_group}' on locally neutralized data: {e}")
                 continue
 
-            performance_gain = new_score - previous_score
+            current_counterfactual_X_group = fully_neutralized_X_group.copy()
+            # Iterate from least to most important feature
+            for feature_to_add_back in reversed(rgs_important_features):
+                current_counterfactual_X_group[feature_to_add_back] = X_test_group[feature_to_add_back]
 
+                try:
+                    if metric == 'auc':
+                        new_probas = ml_model.predict_proba(current_counterfactual_X_group.values)[:, 1]
+                        new_score = roc_auc_score(y_test_group, new_probas)
+                    else:  # accuracy
+                        new_preds = ml_model.predict(current_counterfactual_X_group.values)
+                        new_score = accuracy_score(y_test_group, new_preds)
+                except Exception as e:
+                    logger.error(
+                        f"Model prediction/scoring failed for additive step of RGS '{rgs_group}' (feature {feature_to_add_back}): {e}")
+                    continue
+
+                gain_acc[feature_to_add_back].append(new_score - previous_score)
+                before_acc[feature_to_add_back].append(previous_score)
+                after_acc[feature_to_add_back].append(new_score)
+                previous_score = new_score
+
+        # --- Emit one averaged row per feature (least -> most important) ---
+        active_features_at_step = []
+        for feature_to_add_back in reversed(rgs_important_features):
+            active_features_at_step.append(feature_to_add_back)
+            if not gain_acc[feature_to_add_back]:
+                continue
             validation_results.append({
                 'rgs_group': rgs_group,
                 'num_instances_in_group': len(X_test_group),
@@ -269,12 +307,11 @@ def _perform_additive_impact_validation(
                 'original_group_score': original_group_score,
                 'feature_added_back': feature_to_add_back,
                 'active_important_features': sorted(active_features_at_step),
-                'score_before_adding': previous_score,
-                'score_after_adding': new_score,
-                'performance_gain': performance_gain
+                'score_before_adding': float(np.mean(before_acc[feature_to_add_back])),
+                'score_after_adding': float(np.mean(after_acc[feature_to_add_back])),
+                'performance_gain': float(np.mean(gain_acc[feature_to_add_back])),
+                'n_shuffles': n_shuffles
             })
-
-            previous_score = new_score
 
     logger.info("Additive counterfactual validation complete.")
     if not validation_results:
@@ -316,7 +353,9 @@ def analyze_validation_results(
         observed_order = validation_group.sort_values(by='performance_gain', ascending=False)[
             'feature_added_back'].tolist()
 
-        tau, p_value = -1, -1
+        # NaN, not -1: rank correlation is undefined for a single-feature rule, and -1 is a *valid*
+        # tau meaning perfect anti-correlation, so it silently drags down any average over rules.
+        tau, p_value = np.nan, np.nan
         if set(observed_order) == set(ground_truth_order) and len(ground_truth_order) > 1:
             gt_rank_map = {feature: rank for rank, feature in enumerate(ground_truth_order)}
             observed_ranks_for_gt_features = [gt_rank_map[feature] for feature in observed_order]

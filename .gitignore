@@ -7,3 +7,22 @@ __pycache__/
 
 # IDE
 .idea/
+
+# Virtual environments (never pushed)
+.venv*/
+
+# Regenerable validation battery outputs
+src/xfa/validation/results/
+
+# Generated datasets, models and benchmark outputs.
+# Too large for version control; released separately via the archive DOI (see the paper's
+# Data Availability statement).
+src/my_benchmark_results/
+Dataset/
+expDatasets/
+results/
+
+# Exploratory plots and spreadsheets
+*.html
+*.xlsm
+*.xlsx

@@ -24,8 +24,6 @@ from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 
-from src.run_xai_benchmark import DEFAULT_DATASETS_SEQUENCES
-
 # --- Global Configuration & Logging ---
 # BasicConfig should ideally be called only once.
 # If other modules also call it, it might not behave as expected.
@@ -81,28 +79,31 @@ def generate_all_combinations(start: int, end: int) -> List[List[int]]:
     return all_combinations
 
 TARGET_NAME = "y"
+# --- Dataset config selection (provenance; see project_notes/version_updates.md) ---
+# Full pool (4083 combos) — used ONLY for the 10k complexity screen:
 # DEFAULT_DATASETS_SEQUENCES = generate_all_combinations(1, 12)
-# logger.info("=====================================")
-# logger.info(len(DEFAULT_DATASETS_SEQUENCES))
-DEFAULT_DATASETS_SEQUENCES =[
-    [11, 12],
-    [5, 8, 9, 11, 12],
-    [2, 4, 8, 10],
-    [1, 3, 7, 9, 10, 12],
-    [1, 6, 7, 9, 10, 12],
-    [2, 3, 4, 8, 10, 12],
-    [2, 3, 6, 7, 8, 10],
-    [2, 3, 4, 6, 7, 8, 11],
-    [1, 2, 3, 6, 8, 10, 12],
-    [2, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-          # [1], [2], [3], [4], [5], [6], [7], [8],[9], [10] , [11 ], [12]
-#     # [11], [12] # for testing the impact of the features on each rule individually
-#     # [1, 3] original
-#     # , [3, 9, 10], [1, 5, 6, 11, 12], [1, 3, 7, 9],
-#     # [2, 3, 4, 5, 6, 8, 10, 12], [2, 3, 5, 6, 8, 9, 10, 11],
-#     # [1, 2, 3, 5, 6, 8, 9, 10, 11, 12], [1, 4, 5, 6, 7, 8, 10, 11, 12],
-#     # [2, 3, 4, 5, 7, 8, 10], [4, 5, 6, 7, 8, 10, 11, 12], [5, 6, 7, 9, 10]
+#
+# Suite v1 (SynXAI-DB_run_49feat, published) — SUPERSEDED by v2:
+# DEFAULT_DATASETS_SEQUENCES = [[11,12],[5,8,9,11,12],[2,4,8,10],[1,3,7,9,10,12],[1,6,7,9,10,12],
+#     [2,3,4,8,10,12],[2,3,6,7,8,10],[2,3,4,6,7,8,11],[1,2,3,6,8,10,12],
+#     [2,4,5,6,7,8,9,10,11,12],[1,3,4,5,6,7,8,9,10,11,12]]
+#
+# Suite v2 (SynXAI-DB_run_49feat_v2, ACTIVE) — re-selected from the v4 pool, ranked by 100k AUC
+# (config_1 = easiest), even-spread in 100k AUC. Selected 2026-06-15, seed 42.
+# NOTE: ranks 4-11 are RR1-free (no single-feature rule in the harder half) to avoid per-config
+# fidelity inflation; re-selected 2026-06-18 (see version_updates.md, Decision 6).
+DEFAULT_DATASETS_SEQUENCES = [
+    [7, 12],
+    [7, 11, 12],
+    [2, 3, 7, 9],
+    [10, 11, 12],
+    [3, 5, 7, 11],
+    [2, 3, 4, 8, 11, 12],
+    [3, 5, 6, 7, 8, 11, 12],
+    [5, 6, 10, 11, 12],
+    [2, 3, 5, 6],
+    [2, 5, 6, 10],
+    [2, 3, 4, 5, 6, 7, 9, 10, 11, 12],
 ]
 
 
