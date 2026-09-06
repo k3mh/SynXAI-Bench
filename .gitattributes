@@ -1,0 +1,10 @@
+# Normalise line endings to LF everywhere: the working tree is used from both Windows and WSL,
+# and without this the two disagree about every text file.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary
+*.pkl binary
+*.xlsx binary
+*.xlsm binary
